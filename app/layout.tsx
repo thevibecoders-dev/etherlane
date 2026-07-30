@@ -27,10 +27,10 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Etherlane — Stand inside the flow",
     description:
-      "A live audiovisual observatory translating public routing, network measurements and global knowledge signals into light, motion and a changing data voice.",
+      "A live audiovisual observatory translating public routing, network measurements and global knowledge signals into light, motion, generative music and a changing data voice.",
     openGraph: {
       title: "Etherlane — Stand inside the flow",
-      description: "The public internet, translated into light, motion and a changing data voice.",
+      description: "The public internet, translated into light, motion and generative music.",
       type: "website",
       locale: "en_US",
       images: [
@@ -45,7 +45,7 @@ export async function generateMetadata(): Promise<Metadata> {
     twitter: {
       card: "summary_large_image",
       title: "Etherlane — Stand inside the flow",
-      description: "The public internet, translated into light, motion and a changing data voice.",
+      description: "The public internet, translated into light, motion and generative music.",
       images: [imageUrl],
     },
   };

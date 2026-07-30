@@ -1,6 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  defaultSynthSettings,
+  EtherlaneSynth,
+  type ScaleName,
+  type SynthFrame,
+  type SynthSettings,
+} from "./synth-engine";
 
 type SignalSource = "RIS" | "ATLAS" | "WIKIMEDIA" | "SYNTHETIC";
 type SignalTone = "violet" | "cyan" | "amber" | "coral";
@@ -83,6 +90,20 @@ const risKinds: Record<string, { kind: string; label: string; tone: SignalTone }
   },
 };
 
+const waveformOptions: Array<{ value: OscillatorType; label: string }> = [
+  { value: "sawtooth", label: "SAW" },
+  { value: "triangle", label: "TRI" },
+  { value: "square", label: "SQR" },
+  { value: "sine", label: "SIN" },
+];
+
+const scaleOptions: Array<{ value: ScaleName; label: string }> = [
+  { value: "minor-pentatonic", label: "MINOR PENTA" },
+  { value: "dorian", label: "DORIAN" },
+  { value: "lydian", label: "LYDIAN" },
+  { value: "whole-tone", label: "WHOLE TONE" },
+];
+
 function formatTime(timestamp: number) {
   return new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
@@ -128,6 +149,7 @@ export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const particlesRef = useRef<Particle[]>([]);
   const shockwavesRef = useRef<Shockwave[]>([]);
+  const synthRef = useRef<EtherlaneSynth | null>(null);
   const localVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const lastVoiceRef = useRef(0);
   const pausedRef = useRef(false);
@@ -142,13 +164,22 @@ export default function Home() {
     wikimedia: "connecting",
   });
   const [audioEnabled, setAudioEnabled] = useState(false);
+  const [musicEnabled, setMusicEnabled] = useState(false);
   const [voiceAvailable, setVoiceAvailable] = useState(false);
   const [spokenPhrase, setSpokenPhrase] = useState("VOICE CHANNEL STANDBY");
+  const [synthSettings, setSynthSettings] = useState<SynthSettings>(defaultSynthSettings);
+  const [synthFrame, setSynthFrame] = useState<SynthFrame>({
+    step: 0,
+    note: "REST",
+    source: "SYNTHETIC",
+    energy: 0,
+  });
   const [paused, setPaused] = useState(false);
   const [intensity, setIntensity] = useState(72);
   const [signalCount, setSignalCount] = useState(0);
   const [selected, setSelected] = useState<SignalEvent | null>(null);
   const [showAbout, setShowAbout] = useState(false);
+  const [showSynth, setShowSynth] = useState(false);
 
   useEffect(() => {
     pausedRef.current = paused;
@@ -161,6 +192,17 @@ export default function Home() {
   useEffect(() => {
     intensityRef.current = intensity / 100;
   }, [intensity]);
+
+  useEffect(() => {
+    synthRef.current?.setSettings(synthSettings);
+  }, [synthSettings]);
+
+  useEffect(
+    () => () => {
+      synthRef.current?.dispose();
+    },
+    [],
+  );
 
   useEffect(() => {
     const synchronizeVoices = () => {
@@ -238,6 +280,7 @@ export default function Home() {
         shape,
       });
       shockwavesRef.current = shockwavesRef.current.slice(-28);
+      synthRef.current?.push(complete);
       speakSignal(complete);
     },
     [speakSignal],
@@ -295,7 +338,7 @@ export default function Home() {
     const draw = () => {
       context.clearRect(0, 0, width, height);
       const time = Date.now() * 0.001;
-      const horizonY = height * 0.41;
+      const horizonY = height * (0.405 + Math.sin(time * 0.17) * 0.006);
 
       const glow = context.createRadialGradient(
         width / 2,
@@ -706,6 +749,24 @@ export default function Home() {
     }
   };
 
+  const toggleMusic = async () => {
+    if (!synthRef.current) {
+      synthRef.current = new EtherlaneSynth((frame) => setSynthFrame(frame));
+      synthRef.current.setSettings(synthSettings);
+    }
+    if (musicEnabled) {
+      synthRef.current.stop();
+      setMusicEnabled(false);
+      return;
+    }
+    const started = await synthRef.current.start();
+    setMusicEnabled(started);
+  };
+
+  const updateSynth = <Key extends keyof SynthSettings>(key: Key, value: SynthSettings[Key]) => {
+    setSynthSettings((current) => ({ ...current, [key]: value }));
+  };
+
   const connectionLabel = useMemo(() => {
     const liveCount =
       Number(sourceHealth.ris === "live") +
@@ -748,9 +809,14 @@ export default function Home() {
           {connectionLabel}
         </div>
 
-        <button className="text-button" type="button" onClick={() => setShowAbout(true)}>
-          ABOUT THE SIGNAL
-        </button>
+        <div className="topbar-actions">
+          <button className="text-button synth-link" type="button" onClick={() => setShowSynth(true)}>
+            SIGNAL SYNTH
+          </button>
+          <button className="text-button" type="button" onClick={() => setShowAbout(true)}>
+            ABOUT
+          </button>
+        </div>
       </header>
 
       <section id="experience" className="experience" aria-label="Live internet signal experience">
@@ -762,7 +828,7 @@ export default function Home() {
           </h1>
           <p className="hero-intro">
             Global routes shift. Measurements return. Public knowledge changes. The invisible
-            internet becomes light, motion and a continuously mutating data voice.
+            internet becomes light, motion, a mutating data voice and generative music.
           </p>
         </div>
 
@@ -780,9 +846,16 @@ export default function Home() {
           </div>
         </div>
 
-        <div className={`voice-transmission ${audioEnabled ? "is-speaking" : ""}`} aria-live="polite">
-          <small>{audioEnabled ? "NOW VOICING" : "DATA VOICE"}</small>
-          <strong>{spokenPhrase}</strong>
+        <div
+          className={`voice-transmission ${audioEnabled || musicEnabled ? "is-speaking" : ""}`}
+          aria-live="polite"
+        >
+          <small>{musicEnabled ? "SIGNAL SYNTH / LIVE" : audioEnabled ? "NOW VOICING" : "AUDIO CHANNELS"}</small>
+          <strong>
+            {musicEnabled
+              ? `${synthFrame.source} · STEP ${String(synthFrame.step + 1).padStart(2, "0")} · ${synthFrame.note}`
+              : spokenPhrase}
+          </strong>
           <span aria-hidden="true">
             {Array.from({ length: 18 }, (_, index) => (
               <i key={index} />
@@ -831,7 +904,24 @@ export default function Home() {
       <section className="control-deck" aria-label="Experience controls">
         <button
           type="button"
-          className={`primary-control ${audioEnabled ? "is-active" : ""}`}
+          className={`primary-control ${musicEnabled ? "is-active" : ""}`}
+          onClick={toggleMusic}
+          aria-pressed={musicEnabled}
+        >
+          <span className="sequence-icon" aria-hidden="true">
+            {Array.from({ length: 8 }, (_, index) => (
+              <i className={musicEnabled && synthFrame.step % 8 === index ? "is-current" : ""} key={index} />
+            ))}
+          </span>
+          <span>
+            <small>GENERATIVE MUSIC</small>
+            <strong>{musicEnabled ? `${synthFrame.note} / ${synthSettings.tempo} BPM` : "ENTER SYNTH"}</strong>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          className={`secondary-control voice-control ${audioEnabled ? "is-active" : ""}`}
           onClick={toggleAudio}
           aria-pressed={audioEnabled}
           disabled={!voiceAvailable}
@@ -843,9 +933,9 @@ export default function Home() {
             <i />
           </span>
           <span>
-            <small>DATA VOICE</small>
+            <small>VOICE</small>
             <strong>
-              {!voiceAvailable ? "LOCAL VOICE NEEDED" : audioEnabled ? "SPEAKING" : "ENTER VOICE"}
+              {!voiceAvailable ? "UNAVAILABLE" : audioEnabled ? "SPEAKING" : "OFF"}
             </strong>
           </span>
         </button>
@@ -927,6 +1017,193 @@ export default function Home() {
         </div>
       )}
 
+      {showSynth && (
+        <div className="detail-overlay synth-overlay" role="dialog" aria-modal="true" aria-labelledby="synth-title">
+          <button className="overlay-scrim" type="button" aria-label="Close signal synthesizer" onClick={() => setShowSynth(false)} />
+          <article className="synth-card">
+            <header className="synth-header">
+              <div>
+                <p>ETHERLANE INSTRUMENT / EL-01</p>
+                <h2 id="synth-title">SIGNAL SYNTH</h2>
+              </div>
+              <div className="synth-readout" aria-live="polite">
+                <span className={musicEnabled ? "is-live" : ""}>{musicEnabled ? "RUNNING" : "STANDBY"}</span>
+                <strong>{synthFrame.note}</strong>
+                <small>{synthFrame.source} / {Math.round(synthFrame.energy)}% ENERGY</small>
+              </div>
+              <button className="close-button" type="button" onClick={() => setShowSynth(false)} aria-label="Close">
+                ×
+              </button>
+            </header>
+
+            <div className="step-sequencer" aria-label={`Sequencer step ${synthFrame.step + 1} of 16`}>
+              {Array.from({ length: 16 }, (_, index) => (
+                <i
+                  className={`${synthFrame.step === index ? "is-current" : ""} ${
+                    index % 4 === 0 ? "is-beat" : ""
+                  }`}
+                  key={index}
+                />
+              ))}
+            </div>
+
+            <div className="synth-modules">
+              <section className="synth-module oscillator-module">
+                <div className="module-title">
+                  <span>01</span>
+                  <div>
+                    <strong>OSCILLATOR</strong>
+                    <small>TIMBRE SOURCE</small>
+                  </div>
+                </div>
+                <div className="choice-grid" aria-label="Oscillator waveform">
+                  {waveformOptions.map((option) => (
+                    <button
+                      className={synthSettings.waveform === option.value ? "is-selected" : ""}
+                      type="button"
+                      key={option.value}
+                      onClick={() => updateSynth("waveform", option.value)}
+                      aria-pressed={synthSettings.waveform === option.value}
+                    >
+                      <i className={`wave-${option.value}`} aria-hidden="true" />
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <p>Dual detuned voices. Signal type determines octave, envelope and stereo position.</p>
+              </section>
+
+              <section className="synth-module scale-module">
+                <div className="module-title">
+                  <span>02</span>
+                  <div>
+                    <strong>HARMONY</strong>
+                    <small>QUANTIZER</small>
+                  </div>
+                </div>
+                <div className="scale-choices" aria-label="Musical scale">
+                  {scaleOptions.map((option) => (
+                    <button
+                      className={synthSettings.scale === option.value ? "is-selected" : ""}
+                      type="button"
+                      key={option.value}
+                      onClick={() => updateSynth("scale", option.value)}
+                      aria-pressed={synthSettings.scale === option.value}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="synth-module filter-module">
+                <div className="module-title">
+                  <span>03</span>
+                  <div>
+                    <strong>LOW PASS</strong>
+                    <small>SUBTRACTIVE FILTER</small>
+                  </div>
+                </div>
+                <label className="synth-slider">
+                  <span>CUTOFF <output>{Math.round(synthSettings.cutoff)} HZ</output></span>
+                  <input
+                    type="range"
+                    min="280"
+                    max="8800"
+                    step="20"
+                    value={synthSettings.cutoff}
+                    onChange={(event) => updateSynth("cutoff", Number(event.target.value))}
+                  />
+                </label>
+                <label className="synth-slider">
+                  <span>RESONANCE <output>{synthSettings.resonance.toFixed(1)}</output></span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="18"
+                    step="0.5"
+                    value={synthSettings.resonance}
+                    onChange={(event) => updateSynth("resonance", Number(event.target.value))}
+                  />
+                </label>
+              </section>
+
+              <section className="synth-module clock-module">
+                <div className="module-title">
+                  <span>04</span>
+                  <div>
+                    <strong>SIGNAL CLOCK</strong>
+                    <small>EVENT QUANTIZER</small>
+                  </div>
+                </div>
+                <label className="synth-slider">
+                  <span>TEMPO <output>{synthSettings.tempo} BPM</output></span>
+                  <input
+                    type="range"
+                    min="54"
+                    max="148"
+                    value={synthSettings.tempo}
+                    onChange={(event) => updateSynth("tempo", Number(event.target.value))}
+                  />
+                </label>
+                <label className="synth-slider">
+                  <span>DENSITY <output>{synthSettings.density}%</output></span>
+                  <input
+                    type="range"
+                    min="20"
+                    max="100"
+                    value={synthSettings.density}
+                    onChange={(event) => updateSynth("density", Number(event.target.value))}
+                  />
+                </label>
+              </section>
+
+              <section className="synth-module effects-module">
+                <div className="module-title">
+                  <span>05</span>
+                  <div>
+                    <strong>SPACE</strong>
+                    <small>DELAY / REVERB</small>
+                  </div>
+                </div>
+                <label className="synth-slider">
+                  <span>DELAY <output>{synthSettings.delay}%</output></span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="72"
+                    value={synthSettings.delay}
+                    onChange={(event) => updateSynth("delay", Number(event.target.value))}
+                  />
+                </label>
+                <label className="synth-slider">
+                  <span>REVERB <output>{synthSettings.space}%</output></span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="78"
+                    value={synthSettings.space}
+                    onChange={(event) => updateSynth("space", Number(event.target.value))}
+                  />
+                </label>
+              </section>
+            </div>
+
+            <div className="signal-map">
+              <div><i className="tone-violet" /><span>RIPE RIS</span><strong>BASS / ROUTE MOTIFS</strong></div>
+              <div><i className="tone-cyan" /><span>RIPE ATLAS</span><strong>PULSE / HIGH VOICES</strong></div>
+              <div><i className="tone-amber" /><span>WIKIMEDIA</span><strong>CHORDS / HARMONIC LIGHT</strong></div>
+              <p>Events are quantized before playback. Raw messages never enter the audio graph and nothing is recorded.</p>
+            </div>
+
+            <button className={`synth-power ${musicEnabled ? "is-active" : ""}`} type="button" onClick={toggleMusic}>
+              <i aria-hidden="true" />
+              {musicEnabled ? "STOP GENERATIVE MUSIC" : "START GENERATIVE MUSIC"}
+            </button>
+          </article>
+        </div>
+      )}
+
       {showAbout && (
         <div className="detail-overlay" role="dialog" aria-modal="true" aria-labelledby="about-title">
           <button className="overlay-scrim" type="button" aria-label="Close about Etherlane" onClick={() => setShowAbout(false)} />
@@ -949,8 +1226,8 @@ export default function Home() {
                 <span>02</span>
                 <h3>WHAT YOU HEAR</h3>
                 <p>
-                  A local device voice speaks changing technical strings derived from route type,
-                  IP family, path depth, latency and public change size. No content or usernames.
+                  A polyphonic signal synth turns routing into bass motifs, latency into pulses and
+                  public changes into harmony. A separate local voice can speak normalized strings.
                 </p>
               </section>
               <section>

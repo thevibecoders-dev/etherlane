@@ -3,7 +3,18 @@
 Etherlane is a live audiovisual internet observatory. It translates public
 routing updates from RIPE RIS, public measurements from RIPE Atlas and public
 Wikimedia change events into light, event-driven motion and a changing data
-voice.
+voice. Its EL-01 Signal Synth quantizes those events into generative music.
+
+## Signal Synth
+
+- Dual-oscillator polyphonic voices plus deterministic noise accents
+- Low-pass filtering, envelopes, stereo placement, delay, reverb and compression
+- Sixteen-step clock keeps bursty internet events musical
+- RIPE RIS drives bass and route motifs
+- RIPE Atlas drives short pulse voices
+- Wikimedia changes drive chords and harmonic movement
+- Four scales, four oscillator shapes and live tone/space controls
+- No samples, recording, uploads or audio persistence
 
 ## Privacy boundary
 
