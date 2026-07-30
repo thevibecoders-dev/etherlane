@@ -28,6 +28,7 @@ export type SynthSource =
   | "GITHUB"
   | "HACKERNEWS"
   | "BLOCKCHAIN"
+  | "INFRASTRUCTURE"
   | "SYNTHETIC";
 export type SynthTone = "violet" | "cyan" | "amber" | "coral";
 export type ScaleName =

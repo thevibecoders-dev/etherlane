@@ -19,6 +19,7 @@ type SignalSource =
   | "GITHUB"
   | "HACKERNEWS"
   | "BLOCKCHAIN"
+  | "INFRASTRUCTURE"
   | "SYNTHETIC";
 type SignalTone = "violet" | "cyan" | "amber" | "coral";
 type SignalShape = "beam" | "ring" | "packet" | "spark";
@@ -65,6 +66,7 @@ type VisualPacket = {
   lane: number;
   from: number;
   to: number;
+  route: number[];
 };
 
 type SourceHealth = {
@@ -74,6 +76,27 @@ type SourceHealth = {
   github: HealthState;
   hackernews: HealthState;
   blockchain: HealthState;
+  infrastructure: HealthState;
+};
+
+type InfrastructureSnapshot = {
+  state: "operational" | "degraded" | "outage" | "unknown";
+  risk: number;
+  monitorCoverage: string;
+  root: {
+    state: "operational" | "degraded" | "outage" | "unknown";
+    resolvedIdentities: number;
+    resolversResponding: number;
+    dnssecValidated: boolean;
+    operationalInstances: number | null;
+    description: string;
+  };
+  services: Array<{
+    name: string;
+    state: "operational" | "degraded" | "outage" | "unknown";
+    description: string;
+    incidents: number;
+  }>;
 };
 
 const sourceKeys: Array<keyof SourceHealth> = [
@@ -83,6 +106,7 @@ const sourceKeys: Array<keyof SourceHealth> = [
   "github",
   "hackernews",
   "blockchain",
+  "infrastructure",
 ];
 
 const visualizations: Array<{ value: VisualizationMode; label: string; hint: string }> = [
@@ -201,7 +225,7 @@ function wikiName(value: unknown) {
 function shapeFor(kind: string): SignalShape {
   if (/PING|PULSE|KEEPALIVE/.test(kind)) return "ring";
   if (/PAGE|CATEGORY|LOG|LINK|CODE|ITEM|TRANSACTION|RELEASE/.test(kind)) return "packet";
-  if (/WITHDRAWN|NOTIFICATION|STATE|DELETED|LOSS/.test(kind)) return "spark";
+  if (/WITHDRAWN|NOTIFICATION|STATE|DELETED|LOSS|OUTAGE|DEGRADED|ROOT/.test(kind)) return "spark";
   return "beam";
 }
 
@@ -232,6 +256,8 @@ export default function Home() {
   const shockwavesRef = useRef<Shockwave[]>([]);
   const visualPacketsRef = useRef<VisualPacket[]>([]);
   const visualizationRef = useRef<VisualizationMode>("flow");
+  const infrastructureRiskRef = useRef(0);
+  const infrastructureSignatureRef = useRef("");
   const synthRef = useRef<EtherlaneSynth | null>(null);
   const voiceSpaceRef = useRef<EtherlaneVoiceSpace | null>(null);
   const localVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
@@ -248,6 +274,7 @@ export default function Home() {
     github: 0,
     hackernews: 0,
     blockchain: 0,
+    infrastructure: 0,
   });
 
   const [events, setEvents] = useState<SignalEvent[]>([]);
@@ -258,6 +285,26 @@ export default function Home() {
     github: "connecting",
     hackernews: "connecting",
     blockchain: "connecting",
+    infrastructure: "connecting",
+  });
+  const [infrastructure, setInfrastructure] = useState<InfrastructureSnapshot>({
+    state: "unknown",
+    risk: 0,
+    monitorCoverage: "0/5",
+    root: {
+      state: "unknown",
+      resolvedIdentities: 0,
+      resolversResponding: 0,
+      dnssecValidated: false,
+      operationalInstances: null,
+      description: "Acquiring root status",
+    },
+    services: [
+      { name: "Cloudflare", state: "unknown", description: "Acquiring status", incidents: 0 },
+      { name: "GitHub", state: "unknown", description: "Acquiring status", incidents: 0 },
+      { name: "Fastly", state: "unknown", description: "Acquiring status", incidents: 0 },
+      { name: "Google Cloud", state: "unknown", description: "Acquiring status", incidents: 0 },
+    ],
   });
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [musicEnabled, setMusicEnabled] = useState(false);
@@ -405,21 +452,105 @@ export default function Home() {
         shape,
       });
       shockwavesRef.current = shockwavesRef.current.slice(compact ? -8 : -28);
-      visualPacketsRef.current.push({
-        tone: event.tone,
-        code: packetCode(complete),
-        progress: 0,
-        speed: compact ? 0.012 : 0.008 + event.magnitude / 22000,
-        lane: (Math.random() - 0.5) * 1.7,
-        from: Math.floor(Math.random() * (compact ? 18 : 34)),
-        to: Math.floor(Math.random() * (compact ? 18 : 34)),
-      });
+      const nodeCount = compact ? 18 : 34;
+      const packetCopies =
+        event.source === "INFRASTRUCTURE" && event.magnitude >= 70 ? (compact ? 5 : 11) : 1;
+      for (let copy = 0; copy < packetCopies; copy += 1) {
+        const routeLength = 3 + Math.floor(Math.random() * (compact ? 2 : 4));
+        const route: number[] = [];
+        while (route.length < routeLength) {
+          const next = Math.floor(Math.random() * nodeCount);
+          if (!route.includes(next)) route.push(next);
+        }
+        visualPacketsRef.current.push({
+          tone: event.source === "INFRASTRUCTURE" && event.magnitude >= 70 ? "coral" : event.tone,
+          code: packetCode(complete),
+          progress: copy * -0.055,
+          speed: compact ? 0.012 : 0.008 + event.magnitude / 22000,
+          lane: (Math.random() - 0.5) * 1.7,
+          from: route[0],
+          to: route.at(-1) ?? route[0],
+          route,
+        });
+      }
       visualPacketsRef.current = visualPacketsRef.current.slice(compact ? -18 : -42);
       synthRef.current?.push(complete);
       speakSignal(complete);
     },
     [speakSignal],
   );
+
+  useEffect(() => {
+    let disposed = false;
+    let timer: number | undefined;
+
+    const pollInfrastructure = async () => {
+      try {
+        const response = await fetch("/api/infrastructure", { cache: "no-store" });
+        if (!response.ok) throw new Error("monitor unavailable");
+        const snapshot = (await response.json()) as InfrastructureSnapshot;
+        if (disposed) return;
+        setInfrastructure(snapshot);
+        infrastructureRiskRef.current = snapshot.risk;
+        setSourceHealth((current) => ({ ...current, infrastructure: "live" }));
+
+        const signature = [
+          snapshot.state,
+          snapshot.root.state,
+          ...snapshot.services.map((service) => `${service.name}:${service.state}:${service.incidents}`),
+        ].join("|");
+        if (signature !== infrastructureSignatureRef.current) {
+          infrastructureSignatureRef.current = signature;
+          const affected = snapshot.services.filter(
+            (service) => service.state === "outage" || service.state === "degraded",
+          );
+          const outage = snapshot.state === "outage";
+          const rootShift = snapshot.root.state === "outage" || snapshot.root.state === "degraded";
+          emitSignal({
+            source: "INFRASTRUCTURE",
+            kind: outage
+              ? "CORE SERVICE OUTAGE"
+              : rootShift
+                ? "ROOT CONSENSUS SHIFT"
+                : affected.length
+                  ? "INFRASTRUCTURE DEGRADED"
+                  : "CORE NODES NOMINAL",
+            label: outage
+              ? "A major internet service reports disruption"
+              : rootShift
+                ? "Public root-system observations diverged"
+                : affected.length
+                  ? "Important internet infrastructure reports degradation"
+                  : "Root DNS and monitored core services report normal operation",
+            detail: affected.length
+              ? affected.map((service) => `${service.name}: ${service.description}`).join(" · ")
+              : `${snapshot.root.resolvedIdentities}/13 roots · ${snapshot.monitorCoverage} monitors`,
+            tone: outage ? "coral" : affected.length || rootShift ? "amber" : "cyan",
+            magnitude: outage ? Math.max(82, snapshot.risk) : Math.max(24, snapshot.risk),
+            spoken: outage
+              ? `Core service outage. ${affected.map((service) => service.name).join(" and ")} reporting disruption.`
+              : rootShift
+                ? "Root system observation changed."
+                : affected.length
+                  ? `Infrastructure degraded. ${affected.map((service) => service.name).join(" and ")}.`
+                  : "Core nodes nominal. Root system operational.",
+          });
+        }
+      } catch {
+        if (disposed) return;
+        infrastructureRiskRef.current = 0;
+        setInfrastructure((current) => ({ ...current, state: "unknown", risk: 0 }));
+        setSourceHealth((current) => ({ ...current, infrastructure: "offline" }));
+      }
+      if (!disposed) timer = window.setTimeout(pollInfrastructure, 55_000);
+    };
+
+    void pollInfrastructure();
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+    };
+  }, [emitSignal]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -437,6 +568,8 @@ export default function Home() {
       x: 0.08 + ((index * 47) % 83) / 100,
       y: 0.12 + ((index * 31) % 74) / 100,
       radius: 1.4 + (index % 4) * 0.45,
+      vx: (((index * 19) % 11) - 5) * 0.000014,
+      vy: (((index * 23) % 13) - 6) * 0.000012,
     }));
 
     for (let index = 0; index < (compact ? 24 : 74); index += 1) {
@@ -479,37 +612,72 @@ export default function Home() {
     };
 
     const drawNeural = (time: number) => {
-      context.fillStyle = "rgba(3, 4, 9, 0.3)";
+      const risk = infrastructureRiskRef.current;
+      context.fillStyle = risk >= 60 ? "rgba(18, 1, 5, 0.24)" : "rgba(3, 4, 9, 0.3)";
       context.fillRect(0, 0, width, height);
       context.save();
       context.globalCompositeOperation = "screen";
+      if (!pausedRef.current) {
+        const motion = (compact ? 0.72 : 1) * (1 + risk / 55);
+        for (const node of nodes) {
+          node.x += node.vx * motion;
+          node.y += node.vy * motion;
+          if (node.x < 0.045 || node.x > 0.955) node.vx *= -1;
+          if (node.y < 0.08 || node.y > 0.92) node.vy *= -1;
+          node.x = clamp(node.x, 0.04, 0.96);
+          node.y = clamp(node.y, 0.07, 0.93);
+        }
+      }
       for (let index = 0; index < nodes.length; index += 1) {
         const node = nodes[index];
         const next = nodes[(index + 5 + (index % 3)) % nodes.length];
-        context.strokeStyle = `rgba(87, 228, 255, ${compact ? 0.055 : 0.085})`;
+        context.strokeStyle =
+          risk >= 70
+            ? `rgba(255, 100, 105, ${compact ? 0.07 : 0.11})`
+            : `rgba(87, 228, 255, ${compact ? 0.055 : 0.085})`;
         context.lineWidth = 0.55;
         context.beginPath();
         context.moveTo(node.x * width, node.y * height);
         context.lineTo(next.x * width, next.y * height);
         context.stroke();
       }
+      for (const packet of visualPacketsRef.current) {
+        if (packet.progress < 0) continue;
+        const alpha = clamp((1.08 - packet.progress) * 0.62, 0.05, 0.62);
+        const color = tones[packet.tone];
+        context.strokeStyle = `rgba(${color.rgb}, ${alpha})`;
+        context.lineWidth = packet.tone === "coral" ? 1.25 : 0.75;
+        context.beginPath();
+        packet.route.forEach((nodeIndex, routeIndex) => {
+          const node = nodes[nodeIndex % nodes.length];
+          if (routeIndex === 0) context.moveTo(node.x * width, node.y * height);
+          else context.lineTo(node.x * width, node.y * height);
+        });
+        context.stroke();
+      }
       for (let index = 0; index < nodes.length; index += 1) {
         const node = nodes[index];
-        const pulse = 0.35 + Math.sin(time * 1.4 + index) * 0.18;
-        context.fillStyle = index % 3 === 0
-          ? `rgba(151, 105, 255, ${pulse})`
-          : `rgba(87, 228, 255, ${pulse})`;
+        const pulse = 0.35 + Math.sin(time * (1.4 + risk / 90) + index) * 0.18;
+        context.fillStyle =
+          risk >= 70 && index % 3 !== 0
+            ? `rgba(255, 100, 105, ${pulse + 0.12})`
+            : index % 3 === 0
+              ? `rgba(151, 105, 255, ${pulse})`
+              : `rgba(87, 228, 255, ${pulse})`;
         context.beginPath();
         context.arc(node.x * width, node.y * height, node.radius + pulse * 2.4, 0, Math.PI * 2);
         context.fill();
       }
       for (const packet of visualPacketsRef.current) {
         if (!pausedRef.current) packet.progress += packet.speed;
-        const from = nodes[packet.from % nodes.length];
-        const to = nodes[packet.to % nodes.length];
-        const t = clamp(packet.progress, 0, 1);
-        const x = (from.x + (to.x - from.x) * t) * width;
-        const y = (from.y + (to.y - from.y) * t) * height;
+        if (packet.progress < 0) continue;
+        const routeProgress = clamp(packet.progress, 0, 0.9999) * (packet.route.length - 1);
+        const routeIndex = Math.floor(routeProgress);
+        const segmentProgress = routeProgress - routeIndex;
+        const from = nodes[packet.route[routeIndex] % nodes.length];
+        const to = nodes[packet.route[Math.min(routeIndex + 1, packet.route.length - 1)] % nodes.length];
+        const x = (from.x + (to.x - from.x) * segmentProgress) * width;
+        const y = (from.y + (to.y - from.y) * segmentProgress) * height;
         const color = tones[packet.tone];
         context.fillStyle = color.hex;
         context.beginPath();
@@ -526,7 +694,8 @@ export default function Home() {
     };
 
     const drawMatrix = (time: number) => {
-      context.fillStyle = "rgba(2, 4, 7, 0.24)";
+      const risk = infrastructureRiskRef.current;
+      context.fillStyle = risk >= 70 ? "rgba(18, 1, 5, 0.22)" : "rgba(2, 4, 7, 0.24)";
       context.fillRect(0, 0, width, height);
       context.save();
       context.font = `${compact ? 8 : 10}px monospace`;
@@ -535,7 +704,12 @@ export default function Home() {
       for (let column = 0; column < columnCount; column += 1) {
         const x = ((column + 0.5) / columnCount) * width;
         const y = ((time * (18 + (column % 5) * 4) + column * 67) % (height + 80)) - 40;
-        context.fillStyle = column % 3 === 0 ? "rgba(151,105,255,.2)" : "rgba(87,228,255,.16)";
+        context.fillStyle =
+          risk >= 70 && column % 2 === 0
+            ? "rgba(255,100,105,.3)"
+            : column % 3 === 0
+              ? "rgba(151,105,255,.2)"
+              : "rgba(87,228,255,.16)";
         context.fillText(`${(column * 73).toString(16).padStart(3, "0")} 01`, x, y);
       }
       for (const packet of visualPacketsRef.current) {
@@ -569,6 +743,7 @@ export default function Home() {
         return;
       }
       context.clearRect(0, 0, width, height);
+      const infrastructureRisk = infrastructureRiskRef.current;
       const horizonY = height * (0.405 + Math.sin(time * 0.17) * 0.006);
 
       const glow = context.createRadialGradient(
@@ -584,6 +759,20 @@ export default function Home() {
       glow.addColorStop(1, "rgba(0, 0, 0, 0)");
       context.fillStyle = glow;
       context.fillRect(0, 0, width, height);
+      if (infrastructureRisk >= 45) {
+        const distress = context.createRadialGradient(
+          width * 0.5,
+          horizonY,
+          0,
+          width * 0.5,
+          horizonY,
+          width * 0.72,
+        );
+        distress.addColorStop(0, `rgba(255, 24, 48, ${0.08 + infrastructureRisk / 720})`);
+        distress.addColorStop(1, "rgba(0, 0, 0, 0)");
+        context.fillStyle = distress;
+        context.fillRect(0, 0, width, height);
+      }
 
       context.save();
       context.globalCompositeOperation = "screen";
@@ -1168,7 +1357,11 @@ export default function Home() {
     localVoices.find((voice) => voice.voiceURI === selectedVoiceUri)?.name ?? "BEST LOCAL VOICE";
 
   return (
-    <main className="etherlane-shell">
+    <main
+      className={`etherlane-shell infra-${infrastructure.state} ${
+        infrastructure.risk >= 72 ? "is-disrupted" : ""
+      }`}
+    >
       <canvas ref={canvasRef} className="signal-canvas" aria-hidden="true" />
       <div className="grain" aria-hidden="true" />
       <div className="scanline" aria-hidden="true" />
@@ -1276,6 +1469,54 @@ export default function Home() {
           </div>
           <span className="retention-chip">0 B RETAINED</span>
         </div>
+
+        <section
+          className={`infrastructure-panel state-${infrastructure.state}`}
+          aria-label="Core internet infrastructure status"
+          aria-live="polite"
+        >
+          <div className="infrastructure-summary">
+            <span>
+              <i aria-hidden="true" />
+              CORE NETWORK
+            </span>
+            <strong>
+              {infrastructure.state === "outage"
+                ? "DISRUPTION DETECTED"
+                : infrastructure.state === "degraded"
+                  ? "SIGNAL DEGRADATION"
+                  : infrastructure.state === "operational"
+                    ? "NODES NOMINAL"
+                    : "MONITORS ACQUIRING"}
+            </strong>
+            <small>
+              RISK {infrastructure.risk}% · {infrastructure.monitorCoverage} MONITORS
+            </small>
+          </div>
+
+          <div className="infrastructure-nodes">
+            <span className={`node-state state-${infrastructure.root.state}`}>
+              ROOT DNS
+              <b>
+                {infrastructure.root.resolvedIdentities}/13
+                {infrastructure.root.operationalInstances
+                  ? ` · ${infrastructure.root.operationalInstances.toLocaleString()} INST`
+                  : ""}
+              </b>
+            </span>
+            {infrastructure.services.map((service) => (
+              <span className={`node-state state-${service.state}`} key={service.name}>
+                {service.name.toUpperCase()}
+                <b>{service.state.toUpperCase()}</b>
+              </span>
+            ))}
+          </div>
+
+          <p>
+            Official service status plus multi-resolver root observation. Unreachable monitors
+            remain unknown and never become a false outage.
+          </p>
+        </section>
 
         <div className="event-list">
           {events.length === 0 ? (
@@ -1392,6 +1633,9 @@ export default function Home() {
           </span>
           <span className={`source-tag ${sourceHealth.blockchain === "live" ? "is-live" : ""}`}>
             <i /> BLOCKCHAIN
+          </span>
+          <span className={`source-tag ${sourceHealth.infrastructure === "live" ? "is-live" : ""}`}>
+            <i /> CORE STATUS
           </span>
         </div>
         <p>
@@ -1654,6 +1898,7 @@ export default function Home() {
               <div><i className="tone-cyan" /><span>GITHUB</span><strong>CODE / BRIGHT MOTIFS</strong></div>
               <div><i className="tone-violet" /><span>HACKER NEWS</span><strong>THREAD / MID VOICES</strong></div>
               <div><i className="tone-amber" /><span>BLOCKCHAIN</span><strong>LEDGER / LOW PULSES</strong></div>
+              <div><i className="tone-coral" /><span>CORE STATUS</span><strong>OUTAGE / DISTRESS VOICES</strong></div>
               <p>Events are quantized before playback. Raw messages never enter the audio graph and nothing is recorded.</p>
             </div>
 
@@ -1679,9 +1924,9 @@ export default function Home() {
                 <span>01</span>
                 <h3>WHAT YOU SEE</h3>
                 <p>
-                  Six public signal families become a flowing highway, a transmitting neural
-                  network or matrix-like packet code. Mobile rendering automatically uses a
-                  lighter 24-frame profile.
+                  Six public signal families and a live infrastructure-health channel become a
+                  flowing highway, a moving neural network or matrix-like packet code. Every
+                  message forms a fresh multi-hop path. Mobile uses a lighter 24-frame profile.
                 </p>
               </section>
               <section>
@@ -1689,8 +1934,9 @@ export default function Home() {
                 <h3>WHAT YOU HEAR</h3>
                 <p>
                   An evolving ambient pad moves gradually through the selected scale while routing,
-                  latency, code, conversation and ledger events add spatial voices. Local speech
-                  adds normalized strings without sending text to a TTS service.
+                  latency, code, conversation, ledger and infrastructure events add spatial
+                  voices. Major disruption signals descend into darker distress tones. Local
+                  speech adds normalized strings without sending text to a TTS service.
                 </p>
               </section>
               <section>
@@ -1698,7 +1944,8 @@ export default function Home() {
                 <h3>WHAT WE KEEP</h3>
                 <p>
                   Nothing. Signals exist briefly in memory, become light and sound, then
-                  disappear. No database, no payload capture, no private traffic.
+                  disappear. Infrastructure checks are normalized in transit and are not stored.
+                  No database, no payload capture, no private traffic.
                 </p>
               </section>
             </div>

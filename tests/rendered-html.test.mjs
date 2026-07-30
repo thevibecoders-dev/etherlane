@@ -39,6 +39,9 @@ test("server-renders the Etherlane experience and metadata", async () => {
   assert.match(html, /WIKIMEDIA/);
   assert.match(html, /GITHUB/);
   assert.match(html, /BLOCKCHAIN/);
+  assert.match(html, /CORE NETWORK/);
+  assert.match(html, /ROOT DNS/);
+  assert.match(html, /CLOUDFLARE/);
   assert.match(html, /NEURAL/);
   assert.match(html, /MATRIX/);
   assert.match(html, /AMBIENT SYNTH/);
@@ -46,11 +49,12 @@ test("server-renders the Etherlane experience and metadata", async () => {
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|VibeVeilig/i);
 });
 
-test("uses six public read-only feeds and never adds persistence", async () => {
-  const [page, layout, packageJson] = await Promise.all([
+test("uses six activity feeds plus infrastructure health and never adds persistence", async () => {
+  const [page, layout, packageJson, infrastructureRoute] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/infrastructure/route.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /wss:\/\/ris-live\.ripe\.net\/v1\/ws/);
@@ -59,6 +63,9 @@ test("uses six public read-only feeds and never adds persistence", async () => {
   assert.match(page, /https:\/\/api\.github\.com\/events\?per_page=20/);
   assert.match(page, /https:\/\/hacker-news\.firebaseio\.com\/v0\/updates\.json/);
   assert.match(page, /wss:\/\/ws\.blockchain\.info\/inv/);
+  assert.match(page, /fetch\("\/api\/infrastructure"/);
+  assert.match(page, /CORE SERVICE OUTAGE/);
+  assert.match(page, /ROOT CONSENSUS SHIFT/);
   assert.match(page, /includeRaw:\s*false/);
   assert.match(page, /slice\(0,\s*18\)/);
   assert.match(page, /SpeechSynthesisUtterance/);
@@ -68,6 +75,16 @@ test("uses six public read-only feeds and never adds persistence", async () => {
   assert.doesNotMatch(page, /localStorage|sessionStorage|indexedDB|document\.cookie/i);
   assert.doesNotMatch(packageJson, /react-loading-skeleton|drizzle-orm|drizzle-kit/);
   assert.match(layout, /lang="en"/);
+  assert.match(infrastructureRoute, /https:\/\/www\.cloudflarestatus\.com\/api\/v2\/summary\.json/);
+  assert.match(infrastructureRoute, /https:\/\/www\.githubstatus\.com\/api\/v2\/summary\.json/);
+  assert.match(infrastructureRoute, /https:\/\/www\.fastlystatus\.com\/api\/v2\/summary\.json/);
+  assert.match(infrastructureRoute, /https:\/\/status\.cloud\.google\.com\/incidents\.json/);
+  assert.match(infrastructureRoute, /https:\/\/dns\.google\/resolve\?name=\./);
+  assert.match(infrastructureRoute, /https:\/\/cloudflare-dns\.com\/dns-query\?name=\./);
+  assert.match(infrastructureRoute, /https:\/\/root-servers\.org\//);
+  assert.match(infrastructureRoute, /state:\s*"unknown",\s*description:\s*"Monitor unavailable"/);
+  assert.match(infrastructureRoute, /stale-while-revalidate=120/);
+  assert.doesNotMatch(infrastructureRoute, /state:\s*"outage",\s*description:\s*"Monitor unavailable"/);
 
   await assert.rejects(
     access(new URL("../app/_sites-preview/SkeletonPreview.tsx", import.meta.url)),
@@ -102,10 +119,18 @@ test("expands both routing vocabulary and signal-driven visual forms", async () 
   assert.match(page, /type VisualizationMode = "flow" \| "neural" \| "matrix"/);
   assert.match(page, /drawNeural/);
   assert.match(page, /drawMatrix/);
+  assert.match(page, /route:\s*number\[\]/);
+  assert.match(page, /node\.x \+= node\.vx/);
+  assert.match(page, /packet\.route\.forEach/);
+  assert.match(page, /routeProgress/);
+  assert.match(page, /infrastructureRiskRef/);
   assert.match(page, /1000 \/ 24/);
   assert.match(page, /devicePixelRatio = compact \? 1/);
   assert.match(css, /@keyframes transmit/);
   assert.match(css, /\.visualizer-switch/);
+  assert.match(css, /\.infrastructure-panel/);
+  assert.match(css, /\.etherlane-shell\.is-disrupted/);
+  assert.match(css, /@keyframes distress-background/);
   assert.match(css, /\.signal-canvas\s*\{[\s\S]*position:\s*fixed/);
 });
 

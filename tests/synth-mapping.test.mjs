@@ -86,6 +86,7 @@ test("accentForSignal produces a musical, bounded voice per source", () => {
     "GITHUB",
     "HACKERNEWS",
     "BLOCKCHAIN",
+    "INFRASTRUCTURE",
     "SYNTHETIC",
   ]) {
     const voice = accentForSignal({ ...base, source }, "aeolian", "D");

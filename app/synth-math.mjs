@@ -83,12 +83,13 @@ export function accentForSignal(signal, scale, key) {
     GITHUB: 4,
     HACKERNEWS: 2,
     BLOCKCHAIN: -4,
+    INFRASTRUCTURE: -9,
     SYNTHETIC: -2,
   };
   // ATLAS: fast return (low magnitude) => bright/high; high latency => low/dark.
   const latencyDegree = signal.source === "ATLAS" ? Math.round((100 - signal.magnitude) / 12) : 0;
   const baseDegree = sourceRegister[signal.source] + latencyDegree + (seed % 5);
-  const descending = /WITHDRAWN|NOTIFICATION|REMOVED|HIGH LATENCY/.test(signal.kind);
+  const descending = /WITHDRAWN|NOTIFICATION|REMOVED|HIGH LATENCY|OUTAGE|DEGRADED|ROOT CONSENSUS/.test(signal.kind);
   // +7 keeps accents above the pad root; withdrawals/notifications drop a full
   // octave so they always read as "something left" regardless of hash jitter.
   const midi = quantizeToScale(baseDegree + 7, scale, key) - (descending ? 12 : 0);
@@ -107,6 +108,7 @@ export function accentForSignal(signal, scale, key) {
     GITHUB: 0.56,
     HACKERNEWS: -0.18,
     BLOCKCHAIN: -0.58,
+    INFRASTRUCTURE: 0,
     SYNTHETIC: -0.1,
   }[signal.source];
   const bright =
