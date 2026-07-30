@@ -7,18 +7,20 @@ voice. Its EL-01 Signal Synth quantizes those events into generative music.
 
 ## Ambient Signal Synth
 
-- Continuously evolving modal pads instead of a repeating step sequence
+- Continuously evolving modal pads across 24 harmonic states, inversions and voicings
 - Selectable ambient, 126 BPM EDM, 132 BPM techno and broken 112 BPM IDM modes
-- Procedural kick, snare, hats, percussion and bass generated entirely with Web Audio
-- Public signal identity and energy mutate fills, accents, syncopation and IDM microtiming
-- Source-health harmony with smooth crossfades through six chord positions
+- Procedural kick, snare, open and closed hats, percussion and bass generated entirely with Web Audio
+- An unbounded phrase counter creates kick dropouts, air breaks, rolling hats, fills, syncopation and IDM microtiming without returning to a fixed 32-step loop
+- Six data-controlled modular voices continuously vary octave, pitch, gate, waveform, filter cutoff, delay, feedback, reverb and stereo position
+- Public signal identity, energy, source and sequence steer rhythm, timbre, density and harmonic movement
+- Source-health harmony with smooth crossfades and signal-led chord advances
 - Signal-driven bowed accents, safely bounded ping-pong delay, hall reverb and limiting
 - Distinct strings, glass and choir palettes with live shimmer updates
 - Five atmosphere patches: Ether Bloom, Glass Orbit, Choir Void, Deep Rest and Signal Storm
 - RIPE RIS, RIPE Atlas, Wikimedia, GitHub, Hacker News, blockchain and infrastructure signals
 - Five scales, six keys and live tone, motion and space controls
-- On-demand Piper neural voice plus the best available local device voice
-- Full signal narration or sparse, slower dream phrases
+- Four selectable on-device Piper characters, including two deep male voices, plus the best available local device voice
+- Full signal narration or sparse, slower hypnotic dream phrases
 - True 3.8-second convolution reverb around Piper audio
 - Different 310 ms left and 470 ms right voice delays with bounded cross-feedback
 - Four true-stereo binaural modes with a visible headphones advisory

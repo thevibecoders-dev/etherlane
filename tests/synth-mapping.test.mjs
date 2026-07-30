@@ -11,6 +11,7 @@ import {
   clamp,
   ensembleDetune,
   midiToFrequency,
+  modulationForSignal,
   padChordForHealth,
   quantizeToScale,
   rhythmProfiles,
@@ -147,14 +148,25 @@ test("electronic rhythm modes keep distinct musical identities", () => {
   );
   const idm = Array.from({ length: 32 }, (_, step) => rhythmStepFor("idm", step, 42, 0.7));
 
-  assert.deepEqual(
-    edm.flatMap((cell, step) => (cell.kick ? [step] : [])),
-    [0, 4, 8, 12, 16, 20, 24, 28],
+  const edmNext = Array.from({ length: 32 }, (_, step) =>
+    rhythmStepFor("edm", step + 32, 42, 0.7),
   );
-  assert.deepEqual(
-    techno.flatMap((cell, step) => (cell.kick ? [step] : [])),
-    [0, 4, 8, 12, 16, 20, 24, 28],
+  const technoNext = Array.from({ length: 32 }, (_, step) =>
+    rhythmStepFor("techno", step + 32, 42, 0.7),
   );
+  assert.notDeepEqual(
+    edm.map((cell) => [cell.kick, cell.closedHat, cell.openHat, cell.percussion]),
+    edmNext.map((cell) => [cell.kick, cell.closedHat, cell.openHat, cell.percussion]),
+    "EDM should evolve from phrase to phrase",
+  );
+  assert.notDeepEqual(
+    techno.map((cell) => [cell.kick, cell.closedHat, cell.openHat, cell.percussion]),
+    technoNext.map((cell) => [cell.kick, cell.closedHat, cell.openHat, cell.percussion]),
+    "techno should evolve from phrase to phrase",
+  );
+  assert.ok(edm.filter((cell) => cell.kick).length > 0);
+  assert.ok(edm.filter((cell) => cell.kick).length < 8, "EDM should not lock to eight quarter kicks");
+  assert.ok(techno.some((cell) => cell.openHat));
   assert.ok(idm.some((cell) => cell.microShift !== 0), "IDM should use microtiming");
   assert.notDeepEqual(
     idm.map((cell) => cell.kick),
@@ -183,7 +195,34 @@ test("signal energy creates deterministic but evolving drum details", () => {
     openHat: false,
     percussion: false,
     bass: false,
+    synth: false,
     accent: 0.72,
     microShift: 0,
+    gate: 0.5,
   });
+});
+
+test("public data maps to bounded and source-specific modular synthesis targets", () => {
+  const base = { kind: "ROUTE EXCHANGE", magnitude: 72, tone: "violet", timestamp: 0 };
+  const route = modulationForSignal({ ...base, source: "RIS" }, 44);
+  const latency = modulationForSignal({ ...base, source: "ATLAS" }, 44);
+  const outage = modulationForSignal(
+    { ...base, source: "INFRASTRUCTURE", kind: "CORE SERVICE OUTAGE" },
+    44,
+  );
+  for (const modulation of [route, latency, outage]) {
+    assert.ok(modulation.octave >= -2 && modulation.octave <= 2);
+    assert.ok(modulation.pitchCents >= -24 && modulation.pitchCents <= 24);
+    assert.ok(modulation.cutoff >= 240 && modulation.cutoff <= 6400);
+    assert.ok(modulation.feedback >= 0.12 && modulation.feedback <= 0.42);
+    assert.ok(modulation.delay >= 0.06 && modulation.delay <= 0.46);
+    assert.ok(modulation.reverb >= 0.16 && modulation.reverb <= 0.92);
+    assert.ok(modulation.density >= 0.18 && modulation.density <= 0.98);
+  }
+  assert.notEqual(route.cutoff, latency.cutoff);
+  assert.ok(outage.chordAdvance >= 1 && outage.chordAdvance <= 4);
+  assert.deepEqual(
+    modulationForSignal({ ...base, source: "RIS" }, 44),
+    modulationForSignal({ ...base, source: "RIS" }, 44),
+  );
 });

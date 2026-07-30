@@ -173,13 +173,21 @@ test("ships an immersive generative synth without recording or persistence", asy
   assert.match(engine, /triggerNoiseDrum/);
   assert.match(engine, /triggerPercussion/);
   assert.match(engine, /triggerBass/);
+  assert.match(engine, /triggerDataSynth/);
+  assert.match(engine, /this\.rhythmStep \+= 1/);
+  assert.doesNotMatch(engine, /this\.rhythmStep\s*=\s*\(this\.rhythmStep \+ 1\) % 32/);
   assert.match(engine, /frequency\.exponentialRampToValueAtTime/);
   assert.match(engine, /drumNoiseBuffer/);
-  assert.match(engine, /0\.12 \+ \(next\.delay \/ 100\) \* 0\.34/);
+  assert.match(engine, /applyDataModulation/);
+  assert.match(engine, /setTargetAtTime\(this\.modulation\.driftRate/);
+  assert.match(engine, /0\.43/);
   assert.doesNotMatch(engine, /feedback\.connect\(delayL\)|feedback\.connect\(delayR\)/);
   assert.match(math, /quantizeToScale/);
   assert.match(math, /padChordForHealth/);
   assert.match(math, /rhythmStepFor/);
+  assert.match(math, /modulationForSignal/);
+  assert.match(math, /phraseSeed/);
+  assert.match(math, /const progression = \[0, 3, 5, 1, 4, 2, 6/);
   assert.match(math, /label:\s*"EDM"/);
   assert.match(math, /label:\s*"TECHNO"/);
   assert.match(math, /label:\s*"IDM"/);
@@ -196,6 +204,7 @@ test("ships an immersive generative synth without recording or persistence", asy
     "DATA RHYTHM",
     "PROCEDURAL DRUM MACHINE",
     "KICK LIGHT",
+    "Live data modulation matrix",
   ]) {
     assert.match(page, new RegExp(control));
   }
@@ -205,6 +214,7 @@ test("ships an immersive generative synth without recording or persistence", asy
   assert.match(css, /\.kick-light/);
   assert.match(css, /\.rhythm-grid/);
   assert.match(css, /\.light-colors/);
+  assert.match(css, /\.data-modulation-grid/);
   assert.match(page, /prefers-reduced-motion: reduce/);
   assert.match(page, /light\.animate/);
 });
@@ -227,10 +237,19 @@ test("keeps enhanced voice processing local and ships touch-ready mobile layouts
   assert.match(engine, /createConvolver/);
   assert.match(engine, /preDelay/);
   assert.match(engine, /decodeAudioData/);
+  assert.match(engine, /source\.playbackRate\.value/);
   assert.match(engine, /delayL\.delayTime\.value = 0\.31/);
   assert.match(engine, /delayR\.delayTime\.value = 0\.47/);
   assert.match(neuralVoice, /import\("@realtimex\/piper-tts-web"\)/);
   assert.match(neuralVoice, /en_US-hfc_female-medium/);
+  assert.match(neuralVoice, /en_US-hfc_male-medium/);
+  assert.match(neuralVoice, /en_GB-cori-high/);
+  assert.match(neuralVoice, /en_US-ryan-high/);
+  assert.match(neuralVoice, /TtsSession\._instance = null/);
+  assert.match(neuralVoice, /HFC NOCTURNE/);
+  assert.match(neuralVoice, /RYAN DEEPFIELD/);
+  assert.match(page, /A new voice enters the ether/);
+  assert.match(css, /\.neural-voice-grid/);
   assert.match(packageJson, /@realtimex\/piper-tts-web/);
   assert.match(packageJson, /onnxruntime-web/);
   assert.match(page, /spoken text and signal content do not/);

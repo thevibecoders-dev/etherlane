@@ -22,7 +22,9 @@ import {
   hashText,
   midiToFrequency,
   midiToName,
+  modulationForSignal,
   padChordForHealth,
+  quantizeToScale,
   rhythmProfiles,
   rhythmStepFor,
 } from "./synth-math.mjs";
@@ -51,6 +53,20 @@ export type KickPulse = {
   mode: Exclude<RhythmMode, "ambient">;
   energy: number;
   tone: SynthTone;
+};
+
+export type DataModulation = {
+  seed: number;
+  octave: number;
+  pitchCents: number;
+  voice: string;
+  cutoff: number;
+  delay: number;
+  reverb: number;
+  feedback: number;
+  density: number;
+  chordAdvance: number;
+  driftRate: number;
 };
 
 export const rhythmPresets = rhythmProfiles as Record<
@@ -122,6 +138,12 @@ export type SynthFrame = {
   voices: number;
   rhythm: RhythmMode;
   bpm: number;
+  modulation: DataModulation;
+};
+
+export type VoicePlaybackProfile = {
+  rate?: number;
+  depth?: number;
 };
 
 export const defaultSynthSettings: SynthSettings = {
@@ -144,6 +166,20 @@ type PadVoice = {
   sources: AudioScheduledSourceNode[];
   gain: GainNode;
   midi: number;
+};
+
+const defaultDataModulation: DataModulation = {
+  seed: 911,
+  octave: 0,
+  pitchCents: 0,
+  voice: "AIR",
+  cutoff: 2400,
+  delay: 0.2,
+  reverb: 0.54,
+  feedback: 0.22,
+  density: 0.5,
+  chordAdvance: 1,
+  driftRate: 0.06,
 };
 
 function makeHallImpulse(context: BaseAudioContext, seconds: number, decay: number) {
@@ -181,7 +217,13 @@ export class EtherlaneVoiceSpace {
     await this.context?.resume();
   }
 
-  async playBlob(blob: Blob, tone: SynthTone, energy: number, amount: number) {
+  async playBlob(
+    blob: Blob,
+    tone: SynthTone,
+    energy: number,
+    amount: number,
+    profile: VoicePlaybackProfile = {},
+  ) {
     this.ensureGraph();
     if (!this.context || !this.input) return;
     await this.context.resume();
@@ -190,10 +232,13 @@ export class EtherlaneVoiceSpace {
     const toneFilter = this.context.createBiquadFilter();
     toneFilter.type = "highshelf";
     toneFilter.frequency.value = 4200;
-    toneFilter.gain.value = tone === "coral" ? -4 : tone === "cyan" ? 1.2 : -1.2;
+    toneFilter.gain.value =
+      (tone === "coral" ? -4 : tone === "cyan" ? 1.2 : -1.2) -
+      clamp(profile.depth ?? 0.5, 0, 1) * 2.4;
+    source.playbackRate.value = clamp(profile.rate ?? 0.94, 0.78, 1.05);
     source.buffer = audio;
     source.connect(toneFilter).connect(this.input);
-    this.setSpace(amount, energy);
+    this.setSpace(clamp(amount + (profile.depth ?? 0.5) * 18, 0, 100), energy);
     source.start();
   }
 
@@ -474,6 +519,9 @@ export class EtherlaneSynth {
   private rhythmEnergy = 0.5;
   private nextRhythmAt = 0;
   private rhythmMode: RhythmMode = "ambient";
+  private modulation: DataModulation = { ...defaultDataModulation };
+  private signalSequence = 0;
+  private lastHarmonyAt = 0;
   private lastAccentAt = 0;
   private running = false;
   private liveCount = 1;
@@ -502,10 +550,23 @@ export class EtherlaneSynth {
     if (!this.context) return;
     const now = this.context.currentTime;
     const softClamp = 0.12;
-    this.padFilter?.frequency.setTargetAtTime(this.warmthHz(), now, softClamp);
-    this.reverbSend?.gain.setTargetAtTime((next.space / 100) * 0.9, now, softClamp);
-    this.delaySend?.gain.setTargetAtTime((next.delay / 100) * 0.5, now, softClamp);
-    const safeFeedback = 0.12 + (next.delay / 100) * 0.34;
+    const cutoff = clamp(this.warmthHz() * 0.62 + this.modulation.cutoff * 0.38, 260, 6200);
+    this.padFilter?.frequency.setTargetAtTime(cutoff, now, softClamp);
+    this.reverbSend?.gain.setTargetAtTime(
+      clamp((next.space / 100) * 0.58 + this.modulation.reverb * 0.42, 0.12, 0.9),
+      now,
+      softClamp,
+    );
+    this.delaySend?.gain.setTargetAtTime(
+      clamp((next.delay / 100) * 0.28 + this.modulation.delay * 0.64, 0.04, 0.48),
+      now,
+      softClamp,
+    );
+    const safeFeedback = clamp(
+      0.12 + (next.delay / 100) * 0.16 + this.modulation.feedback * 0.34,
+      0.12,
+      0.43,
+    );
     this.feedbackL?.gain.setTargetAtTime(safeFeedback, now, softClamp);
     this.feedbackR?.gain.setTargetAtTime(safeFeedback, now, softClamp);
     this.filterLfoGain?.gain.setTargetAtTime((next.drift / 100) * 900, now, softClamp);
@@ -539,6 +600,8 @@ export class EtherlaneSynth {
 
   push(signal: MusicSignal) {
     this.lastSignal = signal;
+    this.signalSequence += 1;
+    this.modulation = modulationForSignal(signal, this.signalSequence) as DataModulation;
     this.rhythmSeed = hashText(
       `${this.rhythmSeed}:${signal.source}:${signal.kind}:${Math.round(signal.magnitude)}`,
     );
@@ -547,6 +610,19 @@ export class EtherlaneSynth {
       0.12,
       1,
     );
+    this.applyDataModulation();
+    const harmonyNow = performance.now();
+    const harmonicSource =
+      signal.source === "WIKIMEDIA" ||
+      signal.source === "INFRASTRUCTURE" ||
+      signal.source === "RIS" ||
+      this.modulation.seed % 11 === 0;
+    if (this.running && harmonicSource && harmonyNow - this.lastHarmonyAt > 2600) {
+      this.lastHarmonyAt = harmonyNow;
+      this.evolutionStep += this.modulation.chordAdvance;
+      this.retunePad();
+      this.scheduleEvolution();
+    }
     if (!this.running) return;
     this.queue.push(signal);
     this.queue = this.queue.slice(-32);
@@ -566,6 +642,7 @@ export class EtherlaneSynth {
     this.masterBus.gain.setValueAtTime(0.0001, now);
     this.masterBus.gain.setTargetAtTime((this.settings.master / 100) * 0.9, now, 0.6);
     this.retunePad();
+    this.applyDataModulation();
     if (this.drainTimer === null) {
       this.drainTimer = window.setInterval(() => this.drainQueue(), 45);
     }
@@ -617,6 +694,54 @@ export class EtherlaneSynth {
     // 300 Hz (very dark) .. 6000 Hz (open), curved for musical taste.
     const t = this.settings.warmth / 100;
     return 300 + t ** 1.8 * 5700;
+  }
+
+  private applyDataModulation() {
+    if (!this.context) return;
+    const now = this.context.currentTime;
+    const glide = 0.18 + (1 - this.modulation.density) * 0.34;
+    const cutoff = clamp(
+      this.warmthHz() * 0.58 + this.modulation.cutoff * 0.42,
+      240,
+      6400,
+    );
+    const reverb = clamp(
+      (this.settings.space / 100) * 0.55 + this.modulation.reverb * 0.45,
+      0.14,
+      0.92,
+    );
+    const delay = clamp(
+      (this.settings.delay / 100) * 0.27 + this.modulation.delay * 0.68,
+      0.045,
+      0.48,
+    );
+    const feedback = clamp(
+      0.1 + (this.settings.delay / 100) * 0.15 + this.modulation.feedback * 0.38,
+      0.11,
+      0.43,
+    );
+    this.padFilter?.frequency.setTargetAtTime(cutoff, now, glide);
+    this.reverbSend?.gain.setTargetAtTime(reverb, now, glide);
+    this.delaySend?.gain.setTargetAtTime(delay, now, glide);
+    this.delayL?.delayTime.setTargetAtTime(
+      0.17 + this.modulation.delay * 0.58,
+      now,
+      0.7,
+    );
+    this.delayR?.delayTime.setTargetAtTime(
+      0.29 + this.modulation.delay * 0.71,
+      now,
+      0.7,
+    );
+    this.feedbackL?.gain.setTargetAtTime(feedback, now, glide);
+    this.feedbackR?.gain.setTargetAtTime(clamp(feedback * 0.91, 0.1, 0.4), now, glide);
+    this.filterLfo?.frequency.setTargetAtTime(this.modulation.driftRate, now, 0.8);
+    this.filterLfoGain?.gain.setTargetAtTime(
+      (this.settings.drift / 100) * (520 + this.modulation.density * 760),
+      now,
+      0.6,
+    );
+    this.emitFrame();
   }
 
   private ensureGraph() {
@@ -774,8 +899,9 @@ export class EtherlaneSynth {
     const now = context.currentTime;
     const gain = context.createGain();
     const freq = midiToFrequency(midi);
-    const width = 4 + (this.settings.shimmer / 100) * 16;
-    const detunes = ensembleDetune(3, width);
+    const width = 4 + (this.settings.shimmer / 100) * 14 + this.modulation.density * 5;
+    const voiceCount = this.modulation.voice === "AIR" || this.modulation.voice === "FOLD" ? 4 : 3;
+    const detunes = ensembleDetune(voiceCount, width);
     const sources: AudioScheduledSourceNode[] = detunes.map((cents) => {
       const osc = context.createOscillator();
       osc.type =
@@ -783,9 +909,13 @@ export class EtherlaneSynth {
           ? "triangle"
           : this.settings.palette === "choir"
             ? "sine"
-            : "sawtooth";
+            : this.modulation.voice === "PULSE"
+              ? "square"
+              : this.modulation.voice === "GLASS"
+                ? "triangle"
+                : "sawtooth";
       osc.frequency.value = freq;
-      osc.detune.value = cents;
+      osc.detune.value = cents + this.modulation.pitchCents * 0.12;
       osc.connect(gain);
       osc.start(now);
       return osc;
@@ -839,11 +969,16 @@ export class EtherlaneSynth {
   private scheduleEvolution() {
     if (!this.running) return;
     if (this.evolutionTimer !== null) window.clearTimeout(this.evolutionTimer);
-    const wait = 7600 + (1 - this.intensity) * 5400;
+    const irregularity = (this.modulation.seed >>> 9) % 4200;
+    const wait =
+      4200 +
+      (1 - this.intensity) * 3600 +
+      (1 - this.modulation.density) * 3100 +
+      irregularity;
     this.evolutionTimer = window.setTimeout(() => {
       if (!this.running) return;
-      this.evolutionStep = (this.evolutionStep + 1) % 6;
-      this.retunePad(true);
+      this.evolutionStep += this.modulation.chordAdvance;
+      this.retunePad(this.modulation.voice === "FOLD" || this.evolutionStep % 5 === 0);
       this.scheduleEvolution();
     }, wait);
   }
@@ -866,11 +1001,19 @@ export class EtherlaneSynth {
     if (!this.context || !this.accentBus) return;
     const context = this.context;
     const at = context.currentTime + 0.02;
-    const { midi, velocity, attack, release, pan, bright } = accentForSignal(
+    const {
+      midi: mappedMidi,
+      velocity,
+      attack,
+      release,
+      pan,
+      bright,
+    } = accentForSignal(
       signal,
       this.settings.scale,
       this.settings.key,
     );
+    const midi = clamp(mappedMidi + this.modulation.octave * 12, 35, 91);
     const freq = midiToFrequency(midi);
     const level = velocity * (0.5 + this.intensity * 0.6);
 
@@ -878,8 +1021,11 @@ export class EtherlaneSynth {
     const filter = context.createBiquadFilter();
     const panner = context.createStereoPanner();
     filter.type = "lowpass";
-    filter.frequency.setValueAtTime(clamp(700 + bright * 4200, 400, 6500), at);
-    filter.Q.value = 0.8;
+    filter.frequency.setValueAtTime(
+      clamp(480 + bright * 2100 + this.modulation.cutoff * 0.48, 360, 6800),
+      at,
+    );
+    filter.Q.value = 0.7 + this.modulation.density * 2.1;
     panner.pan.value = pan;
 
     // Bowed-string timbre: two detuned saws + a soft sub, gentle attack.
@@ -891,14 +1037,18 @@ export class EtherlaneSynth {
         ? "triangle"
         : this.settings.palette === "choir"
           ? "sine"
-          : "sawtooth";
+          : this.modulation.voice === "PULSE"
+            ? "square"
+            : this.modulation.voice === "GLASS"
+              ? "triangle"
+              : "sawtooth";
     oscB.type = oscA.type;
     sub.type = "sine";
     oscA.frequency.value = freq;
     oscB.frequency.value = freq;
     sub.frequency.value = freq / 2;
-    oscA.detune.value = -6;
-    oscB.detune.value = 6;
+    oscA.detune.value = -6 + this.modulation.pitchCents;
+    oscB.detune.value = 6 + this.modulation.pitchCents;
     const subGain = context.createGain();
     subGain.gain.value = signal.source === "RIS" ? 0.4 : 0.18;
 
@@ -950,7 +1100,12 @@ export class EtherlaneSynth {
     if (!this.context || !this.running || this.rhythmMode === "ambient") return;
     const mode = this.rhythmMode;
     const profile = rhythmPresets[mode];
-    const sixteenth = 60 / profile.bpm / 4;
+    const livingTempo =
+      profile.bpm +
+      (this.modulation.density - 0.5) * (mode === "idm" ? 10 : 5) +
+      ((this.modulation.seed >>> 21) % 5) -
+      2;
+    const sixteenth = 60 / livingTempo / 4;
     const horizon = this.context.currentTime + 0.12;
 
     while (this.nextRhythmAt < horizon) {
@@ -965,8 +1120,9 @@ export class EtherlaneSynth {
       if (cell.openHat) this.triggerNoiseDrum(at, "open-hat", cell.accent);
       if (cell.percussion) this.triggerPercussion(at, cell.accent, this.rhythmStep);
       if (cell.bass) this.triggerBass(at, mode, cell.accent);
+      if (cell.synth) this.triggerDataSynth(at, mode, cell.accent, cell.gate, this.rhythmStep);
 
-      this.rhythmStep = (this.rhythmStep + 1) % 32;
+      this.rhythmStep += 1;
       this.nextRhythmAt += sixteenth;
       this.rhythmEnergy = Math.max(0.18, this.rhythmEnergy * 0.996);
     }
@@ -1052,7 +1208,13 @@ export class EtherlaneSynth {
     source.playbackRate.value = kind === "snare" ? 0.82 : 1.2;
     filter.type = kind === "snare" ? "bandpass" : "highpass";
     filter.frequency.value =
-      kind === "snare" ? 1850 : this.rhythmMode === "idm" ? 7600 : 6800;
+      kind === "snare"
+        ? clamp(1250 + this.modulation.cutoff * 0.24, 1350, 2800)
+        : clamp(
+            (this.rhythmMode === "idm" ? 6100 : 5600) + this.modulation.cutoff * 0.32,
+            6200,
+            9800,
+          );
     filter.Q.value = kind === "snare" ? 0.7 : 0.45;
     panner.pan.value =
       kind === "snare" ? 0.05 : ((this.rhythmStep + this.rhythmSeed) % 5 - 2) * 0.16;
@@ -1069,7 +1231,10 @@ export class EtherlaneSynth {
     const filter = this.context.createBiquadFilter();
     const envelope = this.context.createGain();
     const panner = this.context.createStereoPanner();
-    const pitch = 190 + ((this.rhythmSeed + step * 47) % 520);
+    const pitch =
+      150 +
+      ((this.rhythmSeed + step * 47) % 560) *
+        2 ** (clamp(this.modulation.octave, -1, 1) * 0.5);
 
     oscillator.type = this.rhythmMode === "idm" ? "square" : "triangle";
     oscillator.frequency.setValueAtTime(pitch, at);
@@ -1094,13 +1259,21 @@ export class EtherlaneSynth {
     const oscillator = this.context.createOscillator();
     const filter = this.context.createBiquadFilter();
     const envelope = this.context.createGain();
-    const rootMidi = (this.padVoices[0]?.midi ?? 50) - 12;
+    const rootMidi = clamp(
+      (this.padVoices[0]?.midi ?? 50) - 12 + this.modulation.octave * 12,
+      27,
+      58,
+    );
     const duration = mode === "edm" ? 0.18 : mode === "techno" ? 0.24 : 0.12;
 
     oscillator.type = mode === "idm" ? "square" : "sawtooth";
-    oscillator.frequency.value = midiToFrequency(rootMidi);
+    oscillator.frequency.value =
+      midiToFrequency(rootMidi) * 2 ** (this.modulation.pitchCents / 1200);
     filter.type = "lowpass";
-    filter.frequency.setValueAtTime(mode === "techno" ? 280 : 520, at);
+    filter.frequency.setValueAtTime(
+      clamp((mode === "techno" ? 180 : 320) + this.modulation.cutoff * 0.13, 190, 980),
+      at,
+    );
     filter.frequency.exponentialRampToValueAtTime(120, at + duration);
     filter.Q.value = mode === "edm" ? 3.2 : 1.7;
     envelope.gain.setValueAtTime(0.08 * accent, at);
@@ -1108,6 +1281,75 @@ export class EtherlaneSynth {
     oscillator.connect(filter).connect(envelope).connect(this.drumBus);
     oscillator.start(at);
     oscillator.stop(at + duration + 0.03);
+  }
+
+  private triggerDataSynth(
+    at: number,
+    mode: Exclude<RhythmMode, "ambient">,
+    accent: number,
+    gate: number,
+    step: number,
+  ) {
+    if (!this.context || !this.accentBus) return;
+    const context = this.context;
+    const voice = this.modulation.voice;
+    const phrase = Math.floor(step / 32);
+    const degree =
+      ((this.modulation.seed >>> 4) + step * (mode === "idm" ? 3 : 2) + phrase * 5) % 28;
+    const baseMidi = quantizeToScale(
+      degree,
+      this.settings.scale,
+      this.settings.key,
+      5,
+    );
+    const midi = clamp(baseMidi + this.modulation.octave * 12, 38, 94);
+    const frequency =
+      midiToFrequency(midi) * 2 ** (this.modulation.pitchCents / 1200);
+    const duration = 0.08 + clamp(gate, 0, 1) * (mode === "idm" ? 0.34 : 0.56);
+
+    const carrier = context.createOscillator();
+    const modulator = context.createOscillator();
+    const modDepth = context.createGain();
+    const filter = context.createBiquadFilter();
+    const envelope = context.createGain();
+    const panner = context.createStereoPanner();
+
+    carrier.type =
+      voice === "GLASS"
+        ? "triangle"
+        : voice === "PULSE"
+          ? "square"
+          : voice === "SUB"
+            ? "sine"
+            : "sawtooth";
+    carrier.frequency.value = frequency;
+    modulator.type = voice === "AIR" ? "sine" : "triangle";
+    modulator.frequency.value =
+      frequency * (voice === "FM" ? 2.01 : voice === "FOLD" ? 0.503 : 1.004);
+    modDepth.gain.value =
+      voice === "FM" ? frequency * 0.38 : voice === "FOLD" ? frequency * 0.12 : 2.8;
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(
+      clamp(this.modulation.cutoff * (voice === "SUB" ? 0.28 : 0.78), 220, 6200),
+      at,
+    );
+    filter.frequency.exponentialRampToValueAtTime(
+      clamp(260 + this.modulation.cutoff * 0.18, 240, 1800),
+      at + duration,
+    );
+    filter.Q.value = voice === "FOLD" ? 5.2 : 1.1 + this.modulation.density * 3.4;
+    panner.pan.value = ((this.modulation.seed + step * 17) % 19) / 9 - 1;
+    const level = 0.018 + accent * 0.035 + this.modulation.density * 0.018;
+    envelope.gain.setValueAtTime(0.0001, at);
+    envelope.gain.exponentialRampToValueAtTime(level, at + Math.min(0.035, duration * 0.22));
+    envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+
+    modulator.connect(modDepth).connect(carrier.frequency);
+    carrier.connect(filter).connect(envelope).connect(panner).connect(this.accentBus);
+    carrier.start(at);
+    modulator.start(at);
+    carrier.stop(at + duration + 0.03);
+    modulator.stop(at + duration + 0.03);
   }
 
   private emitFrame(note?: string) {
@@ -1119,6 +1361,7 @@ export class EtherlaneSynth {
       voices: this.padVoices.length + this.activeAccents,
       rhythm: this.rhythmMode,
       bpm: rhythmPresets[this.rhythmMode].bpm,
+      modulation: { ...this.modulation },
     });
   }
 }

@@ -17,7 +17,11 @@ import {
   type SynthFrame,
   type SynthSettings,
 } from "./synth-engine";
-import { EtherlaneNeuralVoice } from "./neural-voice";
+import {
+  EtherlaneNeuralVoice,
+  neuralVoicePresets,
+  type NeuralVoiceName,
+} from "./neural-voice";
 
 type SignalSource =
   | "RIS"
@@ -321,7 +325,6 @@ function dreamPhraseFor(event: SignalEvent) {
     [/NOMINAL|OPERATIONAL/, "all is flowing"],
   ];
   const matched = explicit.find(([pattern]) => pattern.test(event.kind));
-  if (matched) return matched[1];
   const pools: Record<SignalSource, string[]> = {
     RIS: ["routes breathing", "a path opens", "distant crossings"],
     ATLAS: ["soft return", "across the distance", "echo received"],
@@ -333,7 +336,32 @@ function dreamPhraseFor(event: SignalEvent) {
     SYNTHETIC: ["between signals", "soft static", "the ether dreams"],
   };
   const options = pools[event.source];
-  return options[(event.kind.length + Math.round(event.magnitude)) % options.length];
+  const seed =
+    event.kind.length * 31 +
+    Math.round(event.magnitude) * 17 +
+    Math.floor(event.timestamp / 1000);
+  const beginnings = [
+    "listen",
+    "slowly",
+    "beneath the noise",
+    "inside the current",
+    "across the ether",
+    "somewhere in the flow",
+    "between one pulse and the next",
+  ];
+  const endings = [
+    "opening into distance",
+    "drifting without edges",
+    "returning as light",
+    "moving through the dark",
+    "becoming another path",
+    "still changing",
+    "and dissolving again",
+  ];
+  const core = matched?.[1] ?? options[Math.abs(seed) % options.length];
+  return `${beginnings[Math.abs(seed >>> 2) % beginnings.length]}... ${core}... ${
+    endings[Math.abs(seed >>> 5) % endings.length]
+  }`;
 }
 
 export default function Home() {
@@ -355,6 +383,7 @@ export default function Home() {
   const pausedRef = useRef(false);
   const audioEnabledRef = useRef(false);
   const voiceEngineRef = useRef<VoiceEngine>("piper");
+  const neuralVoiceNameRef = useRef<NeuralVoiceName>("hfc-female");
   const voiceDensityRef = useRef<VoiceDensity>("dream");
   const voiceBusyRef = useRef(false);
   const intensityRef = useRef(0.72);
@@ -406,6 +435,8 @@ export default function Home() {
   const [selectedVoiceUri, setSelectedVoiceUri] = useState("");
   const [voiceSpace, setVoiceSpace] = useState(48);
   const [voiceEngine, setVoiceEngine] = useState<VoiceEngine>("piper");
+  const [neuralVoiceName, setNeuralVoiceName] =
+    useState<NeuralVoiceName>("hfc-female");
   const [voiceDensity, setVoiceDensity] = useState<VoiceDensity>("dream");
   const [neuralVoiceStatus, setNeuralVoiceStatus] = useState<
     "idle" | "loading" | "ready" | "error"
@@ -427,6 +458,19 @@ export default function Home() {
     voices: 0,
     rhythm: "ambient",
     bpm: 0,
+    modulation: {
+      seed: 911,
+      octave: 0,
+      pitchCents: 0,
+      voice: "AIR",
+      cutoff: 2400,
+      delay: 0.2,
+      reverb: 0.54,
+      feedback: 0.22,
+      density: 0.5,
+      chordAdvance: 1,
+      driftRate: 0.06,
+    },
   });
   const [paused, setPaused] = useState(false);
   const [intensity, setIntensity] = useState(72);
@@ -514,7 +558,9 @@ export default function Home() {
   }, []);
 
   const prepareNeuralVoice = useCallback(async () => {
-    if (!neuralVoiceRef.current) neuralVoiceRef.current = new EtherlaneNeuralVoice();
+    if (!neuralVoiceRef.current) {
+      neuralVoiceRef.current = new EtherlaneNeuralVoice(neuralVoiceNameRef.current);
+    }
     setNeuralVoiceStatus("loading");
     await neuralVoiceRef.current.prepare(({ loaded, total }) => {
       if (total > 0) setNeuralVoiceProgress(Math.round((loaded / total) * 100));
@@ -534,7 +580,7 @@ export default function Home() {
     const nowMs = performance.now();
     const cadence =
       voiceDensityRef.current === "dream"
-        ? 5200 - intensityRef.current * 900
+        ? 10400 - intensityRef.current * 2700 + (event.kind.length % 5) * 620
         : 2300 - intensityRef.current * 900;
     if (
       nowMs - lastVoiceRef.current < cadence ||
@@ -560,6 +606,7 @@ export default function Home() {
           event.tone,
           event.magnitude,
           voiceSpaceAmountRef.current,
+          neuralVoicePresets[neuralVoiceNameRef.current],
         );
       } catch {
         setNeuralVoiceStatus("error");
@@ -572,7 +619,10 @@ export default function Home() {
     const utterance = new SpeechSynthesisUtterance(phrase);
     utterance.voice = localVoiceRef.current;
     utterance.lang = localVoiceRef.current?.lang ?? "en-US";
-    utterance.rate = 0.82 + clamp(event.magnitude / 100, 0, 1) * 0.26;
+    utterance.rate =
+      voiceDensityRef.current === "dream"
+        ? 0.68 + clamp(event.magnitude / 100, 0, 1) * 0.12
+        : 0.82 + clamp(event.magnitude / 100, 0, 1) * 0.22;
     utterance.pitch =
       event.tone === "coral" ? 0.86 : event.tone === "cyan" ? 1.06 : event.tone === "amber" ? 0.94 : 1;
     utterance.volume = 0.42 + intensityRef.current * 0.48;
@@ -1479,7 +1529,13 @@ export default function Home() {
         await prepareNeuralVoice();
         const blob = await neuralVoiceRef.current!.synthesize("Etherlane. Data voice online.");
         if (!audioEnabledRef.current) return;
-        await voiceSpaceRef.current.playBlob(blob, "violet", 58, voiceSpaceAmountRef.current);
+        await voiceSpaceRef.current.playBlob(
+          blob,
+          "violet",
+          58,
+          voiceSpaceAmountRef.current,
+          neuralVoicePresets[neuralVoiceNameRef.current],
+        );
         setSpokenPhrase("NEURAL VOICE ONLINE");
       } catch {
         setNeuralVoiceStatus("error");
@@ -1512,6 +1568,41 @@ export default function Home() {
         await prepareNeuralVoice();
       } catch {
         setNeuralVoiceStatus("error");
+      }
+    }
+  };
+
+  const chooseNeuralVoice = async (voice: NeuralVoiceName) => {
+    if (voice === neuralVoiceNameRef.current || neuralVoiceStatus === "loading") return;
+    neuralVoiceNameRef.current = voice;
+    setNeuralVoiceName(voice);
+    setNeuralVoiceProgress(0);
+    setNeuralVoiceStatus("idle");
+    if (!neuralVoiceRef.current) {
+      neuralVoiceRef.current = new EtherlaneNeuralVoice(voice);
+    } else {
+      neuralVoiceRef.current.setVoice(voice);
+    }
+    if (audioEnabledRef.current) {
+      voiceBusyRef.current = true;
+      try {
+        await prepareNeuralVoice();
+        const blob = await neuralVoiceRef.current.synthesize(
+          "A new voice enters the ether.",
+        );
+        if (!voiceSpaceRef.current) voiceSpaceRef.current = new EtherlaneVoiceSpace();
+        await voiceSpaceRef.current.playBlob(
+          blob,
+          "violet",
+          52,
+          voiceSpaceAmountRef.current,
+          neuralVoicePresets[voice],
+        );
+        setSpokenPhrase(`${neuralVoicePresets[voice].label} ONLINE`);
+      } catch {
+        setNeuralVoiceStatus("error");
+      } finally {
+        voiceBusyRef.current = false;
       }
     }
   };
@@ -1605,7 +1696,7 @@ export default function Home() {
   const latest = events[0];
   const activeVoiceName =
     voiceEngine === "piper"
-      ? "PIPER HFC NEURAL"
+      ? neuralVoicePresets[neuralVoiceName].label
       : localVoices.find((voice) => voice.voiceURI === selectedVoiceUri)?.name ?? "BEST LOCAL VOICE";
 
   return (
@@ -2180,6 +2271,25 @@ export default function Home() {
                     DEVICE VOICE
                   </button>
                 </div>
+                {voiceEngine === "piper" && (
+                  <div className="neural-voice-grid" aria-label="Piper voice character">
+                    {(Object.entries(neuralVoicePresets) as Array<
+                      [NeuralVoiceName, (typeof neuralVoicePresets)[NeuralVoiceName]]
+                    >).map(([voice, preset]) => (
+                      <button
+                        className={neuralVoiceName === voice ? "is-selected" : ""}
+                        type="button"
+                        key={voice}
+                        disabled={neuralVoiceStatus === "loading"}
+                        onClick={() => void chooseNeuralVoice(voice)}
+                        aria-pressed={neuralVoiceName === voice}
+                      >
+                        <strong>{preset.label}</strong>
+                        <small>{preset.character} · {preset.modelSize}</small>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="scale-choices voice-density-choices" aria-label="Spoken word density">
                   <button
                     className={voiceDensity === "dream" ? "is-selected" : ""}
@@ -2232,7 +2342,7 @@ export default function Home() {
                   {activeVoiceName}. Neural audio runs through a real 3.8 s convolution hall
                   with separate 310 ms left and 470 ms right delays.
                   {voiceEngine === "piper" && neuralVoiceStatus === "idle"
-                    ? " First use downloads an approximately 70 MB voice model to this device."
+                    ? ` First use downloads the selected ${neuralVoicePresets[neuralVoiceName].modelSize} voice model to this device.`
                     : ""}
                   {voiceEngine === "piper" && neuralVoiceStatus === "loading"
                     ? ` Loading local model: ${neuralVoiceProgress}%.`
@@ -2267,7 +2377,18 @@ export default function Home() {
                     </button>
                   ))}
                 </div>
-                <p className="rhythm-description">{rhythmPresets[rhythmMode].description}. Signal volume, source and event type mutate fills, accents and syncopation.</p>
+                <p className="rhythm-description">
+                  {rhythmPresets[rhythmMode].description}. No fixed loop: every phrase inherits
+                  new decisions from the live data stream.
+                </p>
+                <div className="data-modulation-grid" aria-label="Live data modulation matrix">
+                  <span><small>VOICE</small><strong>{synthFrame.modulation.voice}</strong></span>
+                  <span><small>OCTAVE</small><strong>{synthFrame.modulation.octave > 0 ? "+" : ""}{synthFrame.modulation.octave}</strong></span>
+                  <span><small>CUTOFF</small><strong>{Math.round(synthFrame.modulation.cutoff)} HZ</strong></span>
+                  <span><small>ECHO</small><strong>{Math.round(synthFrame.modulation.delay * 100)}%</strong></span>
+                  <span><small>HALL</small><strong>{Math.round(synthFrame.modulation.reverb * 100)}%</strong></span>
+                  <span><small>DENSITY</small><strong>{Math.round(synthFrame.modulation.density * 100)}%</strong></span>
+                </div>
                 <div className="kick-light-controls">
                   <button
                     className={kickLightEnabled ? "is-active" : ""}
