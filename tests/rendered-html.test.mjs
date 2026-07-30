@@ -134,3 +134,30 @@ test("ships a signal-driven subtractive synth without recording or persistence",
   assert.match(css, /\.synth-card/);
   assert.match(css, /\.step-sequencer/);
 });
+
+test("keeps enhanced voice processing local and ships touch-ready mobile layouts", async () => {
+  const [page, engine, css, layout] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/synth-engine.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(page, /voiceQualityScore/);
+  assert.match(page, /\.filter\(\(voice\) => voice\.localService\)/);
+  assert.match(page, /VOICE PROCESSOR/);
+  assert.match(page, /VOICE SPACE/);
+  assert.match(page, /speech text never leaves this device/);
+  assert.match(engine, /class EtherlaneVoiceSpace/);
+  assert.match(engine, /createConvolver/);
+  assert.match(engine, /preDelay/);
+  assert.doesNotMatch(page + engine, /getUserMedia|MediaRecorder|api\.openai|elevenlabs|googleapis/i);
+
+  assert.match(layout, /width:\s*"device-width"/);
+  assert.match(layout, /viewportFit:\s*"cover"/);
+  assert.match(css, /@media \(max-width: 720px\)/);
+  assert.match(css, /grid-template-columns:\s*repeat\(3,\s*1fr\)/);
+  assert.match(css, /env\(safe-area-inset-bottom\)/);
+  assert.match(css, /100dvh/);
+  assert.match(css, /@media \(hover: none\) and \(pointer: coarse\)/);
+});

@@ -84,6 +84,94 @@ function makeImpulse(context: AudioContext, seconds = 2.8) {
   return impulse;
 }
 
+export class EtherlaneVoiceSpace {
+  private context: AudioContext | null = null;
+  private input: GainNode | null = null;
+  private wet: GainNode | null = null;
+
+  async prepare() {
+    this.ensureGraph();
+    await this.context?.resume();
+  }
+
+  play(tone: SynthTone, energy: number, amount: number) {
+    if (!this.context || !this.input || !this.wet || amount <= 0) return;
+    const now = this.context.currentTime;
+    const duration = 0.52 + (amount / 100) * 0.9;
+    const buffer = this.context.createBuffer(
+      1,
+      Math.floor(this.context.sampleRate * duration),
+      this.context.sampleRate,
+    );
+    const data = buffer.getChannelData(0);
+    let seed = 901 + Math.round(energy) * 17;
+    for (let index = 0; index < data.length; index += 1) {
+      seed = (seed * 48271) % 2147483647;
+      const noise = (seed / 2147483647) * 2 - 1;
+      data[index] = noise * (1 - index / data.length) ** 2.4;
+    }
+
+    const source = this.context.createBufferSource();
+    const formant = this.context.createBiquadFilter();
+    const shimmer = this.context.createOscillator();
+    const shimmerGain = this.context.createGain();
+    const envelope = this.context.createGain();
+    const center = { violet: 720, cyan: 1240, amber: 910, coral: 510 }[tone];
+    const peak = clamp((amount / 100) * (0.025 + energy / 4600), 0.008, 0.065);
+
+    source.buffer = buffer;
+    formant.type = "bandpass";
+    formant.frequency.value = center;
+    formant.Q.value = 2.4 + amount / 22;
+    shimmer.type = "sine";
+    shimmer.frequency.value = center * 1.51;
+    shimmer.detune.value = tone === "coral" ? -11 : 7;
+    shimmerGain.gain.setValueAtTime(peak * 0.16, now);
+    shimmerGain.gain.exponentialRampToValueAtTime(0.0001, now + duration * 1.4);
+    envelope.gain.setValueAtTime(0.0001, now);
+    envelope.gain.exponentialRampToValueAtTime(peak, now + 0.045);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    this.wet.gain.setTargetAtTime(0.34 + amount / 165, now, 0.04);
+
+    source.connect(formant).connect(envelope).connect(this.input);
+    shimmer.connect(shimmerGain).connect(this.input);
+    source.start(now);
+    shimmer.start(now);
+    shimmer.stop(now + duration * 1.45);
+  }
+
+  dispose() {
+    void this.context?.close();
+    this.context = null;
+  }
+
+  private ensureGraph() {
+    if (this.context) return;
+    const AudioContextClass =
+      window.AudioContext ||
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    const context = new AudioContextClass();
+    const input = context.createGain();
+    const preDelay = context.createDelay(0.4);
+    const convolver = context.createConvolver();
+    const wet = context.createGain();
+    const highpass = context.createBiquadFilter();
+
+    preDelay.delayTime.value = 0.038;
+    convolver.buffer = makeImpulse(context, 2.1);
+    wet.gain.value = 0.54;
+    highpass.type = "highpass";
+    highpass.frequency.value = 190;
+
+    input.connect(preDelay).connect(convolver).connect(highpass).connect(wet).connect(context.destination);
+    this.context = context;
+    this.input = input;
+    this.wet = wet;
+  }
+}
+
 export class EtherlaneSynth {
   private context: AudioContext | null = null;
   private input: GainNode | null = null;

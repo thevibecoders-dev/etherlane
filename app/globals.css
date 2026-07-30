@@ -19,6 +19,8 @@ html {
   background: var(--ink);
   color-scheme: dark;
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -26,6 +28,7 @@ body {
   background: var(--ink);
   color: var(--paper);
   font-family: var(--font-geist-sans), Arial, sans-serif;
+  overscroll-behavior-y: none;
 }
 
 button,
@@ -35,6 +38,7 @@ input {
 
 button {
   color: inherit;
+  touch-action: manipulation;
 }
 
 .etherlane-shell {
@@ -1140,6 +1144,46 @@ button {
   cursor: pointer;
 }
 
+.voice-selector {
+  display: grid;
+  gap: 10px;
+}
+
+.voice-selector > span {
+  display: flex;
+  justify-content: space-between;
+  color: rgba(241, 239, 249, 0.38);
+  font: 500 7px/1 var(--font-geist-mono), monospace;
+  letter-spacing: 0.1em;
+}
+
+.voice-selector output {
+  color: var(--cyan);
+}
+
+.voice-selector select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 34px 0 11px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 0;
+  background: #0c0c13;
+  color: rgba(241, 239, 249, 0.76);
+  font: 500 8px/1 var(--font-geist-mono), monospace;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+}
+
+.voice-selector select:focus-visible {
+  outline: 1px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.voice-selector select:disabled {
+  opacity: 0.44;
+}
+
 .signal-map {
   display: grid;
   grid-template-columns: repeat(3, 1fr) 1.4fr;
@@ -1389,14 +1433,15 @@ button {
 
 @media (max-width: 720px) {
   .etherlane-shell {
-    min-height: 100svh;
+    min-height: 100dvh;
     overflow-y: auto;
   }
 
   .topbar {
     position: fixed;
     min-height: 64px;
-    padding: 0 18px;
+    padding-right: max(14px, env(safe-area-inset-right));
+    padding-left: max(14px, env(safe-area-inset-left));
   }
 
   .wordmark {
@@ -1412,7 +1457,7 @@ button {
   }
 
   .experience {
-    min-height: 72svh;
+    min-height: 72dvh;
     padding: 112px 18px 70px;
   }
 
@@ -1444,7 +1489,9 @@ button {
     right: auto;
     width: auto;
     max-height: none;
-    margin: 0 18px 188px;
+    margin: 0 max(18px, env(safe-area-inset-right))
+      calc(208px + env(safe-area-inset-bottom))
+      max(18px, env(safe-area-inset-left));
   }
 
   .event-list {
@@ -1453,24 +1500,30 @@ button {
 
   .control-deck {
     position: fixed;
-    bottom: 42px;
+    bottom: calc(42px + env(safe-area-inset-bottom));
     left: 0;
     right: 0;
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    min-height: 68px;
+    grid-template-columns: repeat(3, 1fr);
+    min-height: 72px;
     border-right: 0;
     border-left: 0;
-  }
-
-  .voice-control {
-    display: none;
   }
 
   .primary-control,
   .secondary-control {
     min-width: 0;
     justify-content: center;
+    gap: 7px;
+    padding: 10px 5px;
+  }
+
+  .control-deck small {
+    font-size: 6px;
+  }
+
+  .control-deck strong {
+    font-size: 7px;
   }
 
   .intensity-control {
@@ -1479,8 +1532,10 @@ button {
 
   .footerbar {
     position: fixed;
-    min-height: 42px;
-    padding: 0 14px;
+    min-height: calc(42px + env(safe-area-inset-bottom));
+    padding: 0 max(14px, env(safe-area-inset-right))
+      env(safe-area-inset-bottom)
+      max(14px, env(safe-area-inset-left));
   }
 
   .source-strip {
@@ -1493,7 +1548,7 @@ button {
 
   .detail-card,
   .about-card {
-    max-height: calc(100svh - 36px);
+    max-height: calc(100dvh - 36px);
     overflow-y: auto;
     padding: 28px 20px;
   }
@@ -1502,15 +1557,28 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .synth-overlay {
+    padding: 0;
+  }
+
   .synth-card {
-    max-height: calc(100svh - 20px);
+    width: 100%;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .synth-header {
+    position: sticky;
+    z-index: 3;
+    top: 0;
     grid-template-columns: 1fr;
     align-items: start;
     gap: 22px;
     padding: 26px 56px 22px 18px;
+    background: rgba(8, 8, 13, 0.94);
+    backdrop-filter: blur(18px);
   }
 
   .synth-readout {
@@ -1555,6 +1623,71 @@ button {
   .detail-card dl div {
     border-right: 0;
     border-bottom: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 420px) {
+  .wordmark {
+    gap: 7px;
+    font-size: 9px;
+  }
+
+  .wordmark-glyph {
+    width: 23px;
+    height: 23px;
+  }
+
+  .topbar-actions {
+    gap: 8px;
+  }
+
+  .synth-link::before {
+    display: none;
+  }
+
+  .text-button {
+    font-size: 7px;
+  }
+
+  .hero-copy h1 {
+    font-size: clamp(3.2rem, 17vw, 5.3rem);
+  }
+
+  .primary-control > span:last-child,
+  .secondary-control > span:last-child {
+    gap: 3px;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  button,
+  select,
+  .event-button {
+    min-height: 44px;
+  }
+
+  .synth-slider input {
+    height: 28px;
+  }
+
+  .close-button {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (max-height: 560px) and (orientation: landscape) and (max-width: 940px) {
+  .experience {
+    padding-top: 88px;
+  }
+
+  .hero-intro,
+  .horizon-lockup {
+    display: none;
+  }
+
+  .hero-copy h1 {
+    font-size: min(13vw, 5.2rem);
   }
 }
 

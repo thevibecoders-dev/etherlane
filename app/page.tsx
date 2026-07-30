@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   defaultSynthSettings,
   EtherlaneSynth,
+  EtherlaneVoiceSpace,
   type ScaleName,
   type SynthFrame,
   type SynthSettings,
@@ -145,16 +146,29 @@ function shapeFor(kind: string): SignalShape {
   return "beam";
 }
 
+function voiceQualityScore(voice: SpeechSynthesisVoice) {
+  const name = voice.name.toLowerCase();
+  let score = voice.localService ? 100 : 0;
+  if (/^en[-_]/i.test(voice.lang)) score += 35;
+  if (/natural|neural|enhanced|premium|studio/.test(name)) score += 70;
+  if (/ava|emma|andrew|brian|aria|guy|jenny|sonia|ryan/.test(name)) score += 24;
+  if (/compact|espeak|festival/.test(name)) score -= 45;
+  return score;
+}
+
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const particlesRef = useRef<Particle[]>([]);
   const shockwavesRef = useRef<Shockwave[]>([]);
   const synthRef = useRef<EtherlaneSynth | null>(null);
+  const voiceSpaceRef = useRef<EtherlaneVoiceSpace | null>(null);
   const localVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const selectedVoiceRef = useRef("");
   const lastVoiceRef = useRef(0);
   const pausedRef = useRef(false);
   const audioEnabledRef = useRef(false);
   const intensityRef = useRef(0.72);
+  const voiceSpaceAmountRef = useRef(48);
   const sourceEmitRef = useRef({ ris: 0, atlas: 0, wikimedia: 0 });
 
   const [events, setEvents] = useState<SignalEvent[]>([]);
@@ -166,6 +180,9 @@ export default function Home() {
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [musicEnabled, setMusicEnabled] = useState(false);
   const [voiceAvailable, setVoiceAvailable] = useState(false);
+  const [localVoices, setLocalVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [selectedVoiceUri, setSelectedVoiceUri] = useState("");
+  const [voiceSpace, setVoiceSpace] = useState(48);
   const [spokenPhrase, setSpokenPhrase] = useState("VOICE CHANNEL STANDBY");
   const [synthSettings, setSynthSettings] = useState<SynthSettings>(defaultSynthSettings);
   const [synthFrame, setSynthFrame] = useState<SynthFrame>({
@@ -194,12 +211,17 @@ export default function Home() {
   }, [intensity]);
 
   useEffect(() => {
+    voiceSpaceAmountRef.current = voiceSpace;
+  }, [voiceSpace]);
+
+  useEffect(() => {
     synthRef.current?.setSettings(synthSettings);
   }, [synthSettings]);
 
   useEffect(
     () => () => {
       synthRef.current?.dispose();
+      voiceSpaceRef.current?.dispose();
     },
     [],
   );
@@ -207,12 +229,19 @@ export default function Home() {
   useEffect(() => {
     const synchronizeVoices = () => {
       const voices = window.speechSynthesis?.getVoices() ?? [];
-      const localEnglish =
-        voices.find((voice) => voice.localService && /^en[-_]/i.test(voice.lang)) ??
-        voices.find((voice) => voice.localService) ??
+      const local = voices
+        .filter((voice) => voice.localService)
+        .sort((left, right) => voiceQualityScore(right) - voiceQualityScore(left));
+      const selected =
+        local.find((voice) => voice.voiceURI === selectedVoiceRef.current) ??
+        local.find((voice) => /^en[-_]/i.test(voice.lang)) ??
+        local[0] ??
         null;
-      localVoiceRef.current = localEnglish;
-      setVoiceAvailable(Boolean(localEnglish));
+      localVoiceRef.current = selected;
+      selectedVoiceRef.current = selected?.voiceURI ?? "";
+      setSelectedVoiceUri(selected?.voiceURI ?? "");
+      setLocalVoices(local);
+      setVoiceAvailable(Boolean(selected));
     };
 
     synchronizeVoices();
@@ -235,9 +264,10 @@ export default function Home() {
     utterance.lang = localVoiceRef.current.lang;
     utterance.rate = 0.82 + clamp(event.magnitude / 100, 0, 1) * 0.26;
     utterance.pitch =
-      event.tone === "coral" ? 0.72 : event.tone === "cyan" ? 1.14 : event.tone === "amber" ? 0.92 : 1.02;
-    utterance.volume = 0.3 + intensityRef.current * 0.55;
+      event.tone === "coral" ? 0.86 : event.tone === "cyan" ? 1.06 : event.tone === "amber" ? 0.94 : 1;
+    utterance.volume = 0.42 + intensityRef.current * 0.48;
     setSpokenPhrase(event.spoken.toUpperCase());
+    voiceSpaceRef.current?.play(event.tone, event.magnitude, voiceSpaceAmountRef.current);
     window.speechSynthesis.speak(utterance);
   }, []);
 
@@ -729,7 +759,7 @@ export default function Home() {
     return () => window.clearInterval(interval);
   }, [emitSignal, sourceHealth]);
 
-  const toggleAudio = () => {
+  const toggleAudio = async () => {
     const next = !audioEnabledRef.current;
     audioEnabledRef.current = next;
     setAudioEnabled(next);
@@ -738,15 +768,26 @@ export default function Home() {
       setSpokenPhrase("VOICE CHANNEL STANDBY");
       return;
     }
+    if (!voiceSpaceRef.current) voiceSpaceRef.current = new EtherlaneVoiceSpace();
+    await voiceSpaceRef.current.prepare();
     if (localVoiceRef.current) {
       const utterance = new SpeechSynthesisUtterance("Etherlane. Data voice online.");
       utterance.voice = localVoiceRef.current;
       utterance.lang = localVoiceRef.current.lang;
       utterance.rate = 0.88;
       utterance.volume = 0.62;
+      voiceSpaceRef.current.play("violet", 58, voiceSpaceAmountRef.current);
       window.speechSynthesis.speak(utterance);
       setSpokenPhrase("DATA VOICE ONLINE");
     }
+  };
+
+  const chooseVoice = (voiceUri: string) => {
+    const voice = localVoices.find((candidate) => candidate.voiceURI === voiceUri) ?? null;
+    localVoiceRef.current = voice;
+    selectedVoiceRef.current = voice?.voiceURI ?? "";
+    setSelectedVoiceUri(voice?.voiceURI ?? "");
+    setVoiceAvailable(Boolean(voice));
   };
 
   const toggleMusic = async () => {
@@ -779,6 +820,8 @@ export default function Home() {
   }, [sourceHealth]);
 
   const latest = events[0];
+  const activeVoiceName =
+    localVoices.find((voice) => voice.voiceURI === selectedVoiceUri)?.name ?? "BEST LOCAL VOICE";
 
   return (
     <main className="etherlane-shell">
@@ -1187,6 +1230,45 @@ export default function Home() {
                   />
                 </label>
               </section>
+
+              <section className="synth-module voice-module">
+                <div className="module-title">
+                  <span>06</span>
+                  <div>
+                    <strong>VOICE PROCESSOR</strong>
+                    <small>LOCAL TTS / SPACE TAIL</small>
+                  </div>
+                </div>
+                <label className="voice-selector">
+                  <span>VOICE <output>{voiceAvailable ? "LOCAL" : "UNAVAILABLE"}</output></span>
+                  <select
+                    value={selectedVoiceUri}
+                    onChange={(event) => chooseVoice(event.target.value)}
+                    disabled={localVoices.length === 0}
+                  >
+                    {localVoices.length === 0 ? (
+                      <option value="">NO LOCAL VOICE FOUND</option>
+                    ) : (
+                      localVoices.map((voice) => (
+                        <option value={voice.voiceURI} key={voice.voiceURI}>
+                          {voice.name} · {voice.lang}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+                <label className="synth-slider">
+                  <span>VOICE SPACE <output>{voiceSpace}%</output></span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="82"
+                    value={voiceSpace}
+                    onChange={(event) => setVoiceSpace(Number(event.target.value))}
+                  />
+                </label>
+                <p>{activeVoiceName}. Processed locally; speech text never leaves this device.</p>
+              </section>
             </div>
 
             <div className="signal-map">
@@ -1227,7 +1309,8 @@ export default function Home() {
                 <h3>WHAT YOU HEAR</h3>
                 <p>
                   A polyphonic signal synth turns routing into bass motifs, latency into pulses and
-                  public changes into harmony. A separate local voice can speak normalized strings.
+                  public changes into harmony. The best local voice speaks normalized strings with a
+                  synchronized convolution space tail, without sending text to a TTS service.
                 </p>
               </section>
               <section>
