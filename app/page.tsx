@@ -294,6 +294,7 @@ export default function Home() {
 
     const draw = () => {
       context.clearRect(0, 0, width, height);
+      const time = Date.now() * 0.001;
       const horizonY = height * 0.41;
 
       const glow = context.createRadialGradient(
