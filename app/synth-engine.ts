@@ -1,11 +1,13 @@
-// Etherlane immersive ambient engine.
+// Etherlane immersive generative engine.
 //
-// Two layers, both event-driven — no step sequencer, no "chiptune" blips:
+// Three layers shaped by the live signal flow:
 //   1. A sustained supersaw STRING PAD whose chord follows how many public
 //      feeds are live (1 = root drone, 2 = root+fifth, 3 = full add9 shimmer).
 //   2. Soft, bowed ACCENT voices triggered by real signals, pitch quantised to
 //      a musical scale, spaced by >=70 ms (precedence effect) so dense traffic
 //      stays legible instead of turning to mud.
+//   3. Optional procedural EDM, techno and IDM drums scheduled on the exact
+//      AudioContext clock. Signal energy and identity mutate the pattern.
 //
 // Everything runs through a lush convolution reverb + ensemble chorus + stereo
 // delay + a soft master limiter, so the whole thing reads as one warm space.
@@ -17,9 +19,12 @@ import {
   binauralPair,
   clamp,
   ensembleDetune,
+  hashText,
   midiToFrequency,
   midiToName,
   padChordForHealth,
+  rhythmProfiles,
+  rhythmStepFor,
 } from "./synth-math.mjs";
 
 export type SynthSource =
@@ -41,6 +46,17 @@ export type ScaleName =
 export type KeyName = "C" | "D" | "E" | "F" | "G" | "A";
 export type Palette = "strings" | "glass" | "choir";
 export type BinauralMode = "delta" | "theta" | "alpha" | "focus";
+export type RhythmMode = "ambient" | "edm" | "techno" | "idm";
+export type KickPulse = {
+  mode: Exclude<RhythmMode, "ambient">;
+  energy: number;
+  tone: SynthTone;
+};
+
+export const rhythmPresets = rhythmProfiles as Record<
+  RhythmMode,
+  { label: string; bpm: number; description: string }
+>;
 
 export const binauralPresets: Record<
   BinauralMode,
@@ -104,6 +120,8 @@ export type SynthFrame = {
   source: SynthSource;
   energy: number;
   voices: number;
+  rhythm: RhythmMode;
+  bpm: number;
 };
 
 export const defaultSynthSettings: SynthSettings = {
@@ -428,6 +446,7 @@ export class EtherlaneSynth {
   private masterBus: GainNode | null = null;
   private padBus: GainNode | null = null;
   private accentBus: GainNode | null = null;
+  private drumBus: GainNode | null = null;
   private padFilter: BiquadFilterNode | null = null;
   private filterLfo: OscillatorNode | null = null;
   private filterLfoGain: GainNode | null = null;
@@ -439,6 +458,7 @@ export class EtherlaneSynth {
   private feedbackR: GainNode | null = null;
   private limiter: DynamicsCompressorNode | null = null;
   private breathBuffer: AudioBuffer | null = null;
+  private drumNoiseBuffer: AudioBuffer | null = null;
 
   private padVoices: PadVoice[] = [];
   private activeAccents = 0;
@@ -446,7 +466,14 @@ export class EtherlaneSynth {
   private drainTimer: number | null = null;
   private evolutionTimer: number | null = null;
   private padClearTimer: number | null = null;
+  private rhythmTimer: number | null = null;
+  private kickPulseTimers = new Set<number>();
   private evolutionStep = 0;
+  private rhythmStep = 0;
+  private rhythmSeed = 911;
+  private rhythmEnergy = 0.5;
+  private nextRhythmAt = 0;
+  private rhythmMode: RhythmMode = "ambient";
   private lastAccentAt = 0;
   private running = false;
   private liveCount = 1;
@@ -460,9 +487,11 @@ export class EtherlaneSynth {
   };
   private settings: SynthSettings = { ...defaultSynthSettings };
   private readonly onFrame: (frame: SynthFrame) => void;
+  private readonly onKick?: (pulse: KickPulse) => void;
 
-  constructor(onFrame: (frame: SynthFrame) => void) {
+  constructor(onFrame: (frame: SynthFrame) => void, onKick?: (pulse: KickPulse) => void) {
     this.onFrame = onFrame;
+    this.onKick = onKick;
   }
 
   setSettings(next: SynthSettings) {
@@ -497,8 +526,27 @@ export class EtherlaneSynth {
     this.intensity = clamp(value, 0, 1);
   }
 
+  setRhythmMode(mode: RhythmMode) {
+    if (mode === this.rhythmMode) return;
+    this.rhythmMode = mode;
+    this.rhythmStep = 0;
+    this.rhythmSeed = hashText(`${mode}:${this.lastSignal.source}:${this.lastSignal.kind}`);
+    if (!this.running) return;
+    this.stopRhythm();
+    this.startRhythm();
+    this.emitFrame();
+  }
+
   push(signal: MusicSignal) {
     this.lastSignal = signal;
+    this.rhythmSeed = hashText(
+      `${this.rhythmSeed}:${signal.source}:${signal.kind}:${Math.round(signal.magnitude)}`,
+    );
+    this.rhythmEnergy = clamp(
+      this.rhythmEnergy * 0.68 + (signal.magnitude / 100) * 0.32,
+      0.12,
+      1,
+    );
     if (!this.running) return;
     this.queue.push(signal);
     this.queue = this.queue.slice(-32);
@@ -522,6 +570,7 @@ export class EtherlaneSynth {
       this.drainTimer = window.setInterval(() => this.drainQueue(), 45);
     }
     this.scheduleEvolution();
+    this.startRhythm();
     return true;
   }
 
@@ -537,6 +586,7 @@ export class EtherlaneSynth {
     this.queue = [];
     if (this.evolutionTimer !== null) window.clearTimeout(this.evolutionTimer);
     this.evolutionTimer = null;
+    this.stopRhythm();
     if (this.padClearTimer !== null) window.clearTimeout(this.padClearTimer);
     this.padClearTimer = window.setTimeout(() => {
       if (!this.running) this.clearPad();
@@ -547,6 +597,7 @@ export class EtherlaneSynth {
   dispose() {
     if (this.drainTimer !== null) window.clearInterval(this.drainTimer);
     this.drainTimer = null;
+    this.stopRhythm();
     if (this.evolutionTimer !== null) window.clearTimeout(this.evolutionTimer);
     if (this.padClearTimer !== null) window.clearTimeout(this.padClearTimer);
     this.evolutionTimer = null;
@@ -582,6 +633,7 @@ export class EtherlaneSynth {
 
     const padBus = context.createGain();
     const accentBus = context.createGain();
+    const drumBus = context.createGain();
     const padFilter = context.createBiquadFilter();
 
     const reverb = context.createConvolver();
@@ -607,6 +659,7 @@ export class EtherlaneSynth {
     padFilter.type = "lowpass";
     padFilter.frequency.value = this.warmthHz();
     padFilter.Q.value = 0.6;
+    drumBus.gain.value = 0.72;
 
     reverb.buffer = makeHallImpulse(context, 4.6, 2.6);
     reverbSend.gain.value = (this.settings.space / 100) * 0.9;
@@ -630,6 +683,7 @@ export class EtherlaneSynth {
     padBus.connect(padFilter);
     padFilter.connect(highShelf); // dry pad
     accentBus.connect(highShelf); // dry accents
+    drumBus.connect(highShelf); // dry procedural drums
 
     // Sends (post-filter for pad, direct for accents via a tap).
     padFilter.connect(reverbSend);
@@ -655,6 +709,7 @@ export class EtherlaneSynth {
     this.masterBus = masterBus;
     this.padBus = padBus;
     this.accentBus = accentBus;
+    this.drumBus = drumBus;
     this.padFilter = padFilter;
     this.filterLfo = filterLfo;
     this.filterLfoGain = filterLfoGain;
@@ -673,6 +728,18 @@ export class EtherlaneSynth {
       breathData[index] = ((breathSeed / 2147483647) * 2 - 1) * 0.7;
     }
     this.breathBuffer = breathBuffer;
+    const drumNoiseBuffer = context.createBuffer(
+      1,
+      Math.floor(context.sampleRate * 1.2),
+      context.sampleRate,
+    );
+    const drumNoise = drumNoiseBuffer.getChannelData(0);
+    let drumSeed = 1447;
+    for (let index = 0; index < drumNoise.length; index += 1) {
+      drumSeed = (drumSeed * 48271) % 2147483647;
+      drumNoise[index] = (drumSeed / 2147483647) * 2 - 1;
+    }
+    this.drumNoiseBuffer = drumNoiseBuffer;
   }
 
   private retunePad(forceRebuild = false) {
@@ -699,13 +766,7 @@ export class EtherlaneSynth {
     for (const midi of chord) {
       if (!existing.has(midi)) this.padVoices.push(this.spawnPadVoice(midi));
     }
-    this.onFrame({
-      chord: chord.map(midiToName).join(" "),
-      note: midiToName(chord[0]),
-      source: this.lastSignal.source,
-      energy: this.lastSignal.magnitude,
-      voices: this.padVoices.length + this.activeAccents,
-    });
+    this.emitFrame(midiToName(chord[0]));
   }
 
   private spawnPadVoice(midi: number): PadVoice {
@@ -861,12 +922,203 @@ export class EtherlaneSynth {
       this.activeAccents = Math.max(0, this.activeAccents - 1);
     };
 
+    this.emitFrame(midiToName(midi));
+  }
+
+  private startRhythm() {
+    if (
+      !this.running ||
+      !this.context ||
+      this.rhythmMode === "ambient" ||
+      this.rhythmTimer !== null
+    ) {
+      return;
+    }
+    this.nextRhythmAt = this.context.currentTime + 0.06;
+    this.scheduleRhythmWindow();
+    this.rhythmTimer = window.setInterval(() => this.scheduleRhythmWindow(), 25);
+  }
+
+  private stopRhythm() {
+    if (this.rhythmTimer !== null) window.clearInterval(this.rhythmTimer);
+    this.rhythmTimer = null;
+    for (const timer of this.kickPulseTimers) window.clearTimeout(timer);
+    this.kickPulseTimers.clear();
+  }
+
+  private scheduleRhythmWindow() {
+    if (!this.context || !this.running || this.rhythmMode === "ambient") return;
+    const mode = this.rhythmMode;
+    const profile = rhythmPresets[mode];
+    const sixteenth = 60 / profile.bpm / 4;
+    const horizon = this.context.currentTime + 0.12;
+
+    while (this.nextRhythmAt < horizon) {
+      const cell = rhythmStepFor(mode, this.rhythmStep, this.rhythmSeed, this.rhythmEnergy);
+      const at = Math.max(
+        this.context.currentTime + 0.003,
+        this.nextRhythmAt + cell.microShift,
+      );
+      if (cell.kick) this.triggerKick(at, mode, cell.accent);
+      if (cell.snare) this.triggerNoiseDrum(at, "snare", cell.accent);
+      if (cell.closedHat) this.triggerNoiseDrum(at, "closed-hat", cell.accent);
+      if (cell.openHat) this.triggerNoiseDrum(at, "open-hat", cell.accent);
+      if (cell.percussion) this.triggerPercussion(at, cell.accent, this.rhythmStep);
+      if (cell.bass) this.triggerBass(at, mode, cell.accent);
+
+      this.rhythmStep = (this.rhythmStep + 1) % 32;
+      this.nextRhythmAt += sixteenth;
+      this.rhythmEnergy = Math.max(0.18, this.rhythmEnergy * 0.996);
+    }
+  }
+
+  private triggerKick(
+    at: number,
+    mode: Exclude<RhythmMode, "ambient">,
+    accent: number,
+  ) {
+    if (!this.context || !this.drumBus) return;
+    const context = this.context;
+    const oscillator = context.createOscillator();
+    const envelope = context.createGain();
+    const body = context.createBiquadFilter();
+    const duration = mode === "techno" ? 0.38 : mode === "edm" ? 0.3 : 0.22;
+    const level = clamp(0.42 + accent * 0.3 + this.rhythmEnergy * 0.1, 0.42, 0.78);
+
+    oscillator.type = mode === "idm" ? "triangle" : "sine";
+    oscillator.frequency.setValueAtTime(mode === "edm" ? 178 : 154, at);
+    oscillator.frequency.exponentialRampToValueAtTime(mode === "techno" ? 43 : 47, at + 0.055);
+    body.type = "lowpass";
+    body.frequency.value = mode === "techno" ? 360 : 520;
+    body.Q.value = 0.8;
+    envelope.gain.setValueAtTime(level, at);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+    oscillator.connect(body).connect(envelope).connect(this.drumBus);
+    oscillator.start(at);
+    oscillator.stop(at + duration + 0.02);
+
+    if (mode === "techno") {
+      const rumble = context.createOscillator();
+      const rumbleEnvelope = context.createGain();
+      const rumbleFilter = context.createBiquadFilter();
+      rumble.type = "sine";
+      rumble.frequency.setValueAtTime(47, at + 0.025);
+      rumble.frequency.exponentialRampToValueAtTime(36, at + 0.46);
+      rumbleFilter.type = "lowpass";
+      rumbleFilter.frequency.value = 115;
+      rumbleEnvelope.gain.setValueAtTime(0.0001, at);
+      rumbleEnvelope.gain.exponentialRampToValueAtTime(level * 0.16, at + 0.055);
+      rumbleEnvelope.gain.exponentialRampToValueAtTime(0.0001, at + 0.46);
+      rumble.connect(rumbleFilter).connect(rumbleEnvelope).connect(this.drumBus);
+      rumble.start(at);
+      rumble.stop(at + 0.49);
+    }
+
+    // Musical sidechain: the kick creates breathing room in the evolving pad.
+    if (this.padBus) {
+      this.padBus.gain.setValueAtTime(1, at);
+      this.padBus.gain.exponentialRampToValueAtTime(mode === "edm" ? 0.18 : 0.28, at + 0.014);
+      this.padBus.gain.exponentialRampToValueAtTime(0.98, at + (mode === "edm" ? 0.24 : 0.18));
+    }
+
+    if (this.onKick) {
+      const delayMs = Math.max(0, (at - context.currentTime) * 1000);
+      const timer = window.setTimeout(() => {
+        this.kickPulseTimers.delete(timer);
+        this.onKick?.({
+          mode,
+          energy: clamp(level, 0, 1),
+          tone: this.lastSignal.tone,
+        });
+      }, delayMs);
+      this.kickPulseTimers.add(timer);
+    }
+  }
+
+  private triggerNoiseDrum(
+    at: number,
+    kind: "snare" | "closed-hat" | "open-hat",
+    accent: number,
+  ) {
+    if (!this.context || !this.drumBus || !this.drumNoiseBuffer) return;
+    const source = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const envelope = this.context.createGain();
+    const panner = this.context.createStereoPanner();
+    const duration = kind === "snare" ? 0.19 : kind === "open-hat" ? 0.24 : 0.048;
+    const base = kind === "snare" ? 0.18 : kind === "open-hat" ? 0.095 : 0.075;
+
+    source.buffer = this.drumNoiseBuffer;
+    source.playbackRate.value = kind === "snare" ? 0.82 : 1.2;
+    filter.type = kind === "snare" ? "bandpass" : "highpass";
+    filter.frequency.value =
+      kind === "snare" ? 1850 : this.rhythmMode === "idm" ? 7600 : 6800;
+    filter.Q.value = kind === "snare" ? 0.7 : 0.45;
+    panner.pan.value =
+      kind === "snare" ? 0.05 : ((this.rhythmStep + this.rhythmSeed) % 5 - 2) * 0.16;
+    envelope.gain.setValueAtTime(base * accent, at);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+    source.connect(filter).connect(envelope).connect(panner).connect(this.drumBus);
+    source.start(at);
+    source.stop(at + duration + 0.02);
+  }
+
+  private triggerPercussion(at: number, accent: number, step: number) {
+    if (!this.context || !this.drumBus) return;
+    const oscillator = this.context.createOscillator();
+    const filter = this.context.createBiquadFilter();
+    const envelope = this.context.createGain();
+    const panner = this.context.createStereoPanner();
+    const pitch = 190 + ((this.rhythmSeed + step * 47) % 520);
+
+    oscillator.type = this.rhythmMode === "idm" ? "square" : "triangle";
+    oscillator.frequency.setValueAtTime(pitch, at);
+    oscillator.frequency.exponentialRampToValueAtTime(Math.max(90, pitch * 0.58), at + 0.08);
+    filter.type = "bandpass";
+    filter.frequency.value = pitch * 1.3;
+    filter.Q.value = 2.8;
+    panner.pan.value = ((this.rhythmSeed + step * 13) % 17) / 8 - 1;
+    envelope.gain.setValueAtTime(0.045 * accent, at);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, at + 0.11);
+    oscillator.connect(filter).connect(envelope).connect(panner).connect(this.drumBus);
+    oscillator.start(at);
+    oscillator.stop(at + 0.13);
+  }
+
+  private triggerBass(
+    at: number,
+    mode: Exclude<RhythmMode, "ambient">,
+    accent: number,
+  ) {
+    if (!this.context || !this.drumBus) return;
+    const oscillator = this.context.createOscillator();
+    const filter = this.context.createBiquadFilter();
+    const envelope = this.context.createGain();
+    const rootMidi = (this.padVoices[0]?.midi ?? 50) - 12;
+    const duration = mode === "edm" ? 0.18 : mode === "techno" ? 0.24 : 0.12;
+
+    oscillator.type = mode === "idm" ? "square" : "sawtooth";
+    oscillator.frequency.value = midiToFrequency(rootMidi);
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(mode === "techno" ? 280 : 520, at);
+    filter.frequency.exponentialRampToValueAtTime(120, at + duration);
+    filter.Q.value = mode === "edm" ? 3.2 : 1.7;
+    envelope.gain.setValueAtTime(0.08 * accent, at);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+    oscillator.connect(filter).connect(envelope).connect(this.drumBus);
+    oscillator.start(at);
+    oscillator.stop(at + duration + 0.03);
+  }
+
+  private emitFrame(note?: string) {
     this.onFrame({
-      chord: this.padVoices.map((v) => midiToName(v.midi)).join(" "),
-      note: midiToName(midi),
-      source: signal.source,
-      energy: signal.magnitude,
+      chord: this.padVoices.map((voice) => midiToName(voice.midi)).join(" "),
+      note: note ?? midiToName(this.padVoices[0]?.midi ?? 50),
+      source: this.lastSignal.source,
+      energy: this.lastSignal.magnitude,
       voices: this.padVoices.length + this.activeAccents,
+      rhythm: this.rhythmMode,
+      bpm: rhythmPresets[this.rhythmMode].bpm,
     });
   }
 }

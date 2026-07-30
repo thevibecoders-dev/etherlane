@@ -38,6 +38,89 @@ export function binauralPair(carrierHz, beatHz) {
   };
 }
 
+export const rhythmProfiles = {
+  ambient: {
+    label: "AMBIENT",
+    bpm: 0,
+    description: "Free-flowing pads without a beat",
+  },
+  edm: {
+    label: "EDM",
+    bpm: 126,
+    description: "Four-on-the-floor lift with data-driven builds",
+  },
+  techno: {
+    label: "TECHNO",
+    bpm: 132,
+    description: "Hypnotic drive, rumble and shifting percussion",
+  },
+  idm: {
+    label: "IDM",
+    bpm: 112,
+    description: "Broken geometry, microtiming and signal mutations",
+  },
+};
+
+/**
+ * Deterministic 32-step rhythm cell. Signal-derived seed and energy change the
+ * optional notes, while each mode keeps its own recognisable rhythmic spine.
+ */
+export function rhythmStepFor(mode, step, seed = 0, energy = 0.5) {
+  const index = ((Math.round(step) % 32) + 32) % 32;
+  const safeEnergy = clamp(Number(energy), 0, 1);
+  const variation = hashText(`${mode}:${seed}:${index}`);
+  const chance = (variation % 1000) / 1000;
+  const cell = {
+    kick: false,
+    snare: false,
+    closedHat: false,
+    openHat: false,
+    percussion: false,
+    bass: false,
+    accent: 0.72,
+    microShift: 0,
+  };
+
+  if (mode === "ambient") return cell;
+
+  if (mode === "edm") {
+    cell.kick = index % 4 === 0;
+    cell.snare = index % 8 === 4;
+    cell.closedHat = index % 2 === 0 && index % 4 !== 0;
+    cell.openHat = index % 8 === 2;
+    cell.bass = index % 4 === 2;
+    cell.percussion = index >= 28 && chance < 0.25 + safeEnergy * 0.55;
+    cell.accent = index % 16 === 0 ? 1 : 0.76 + safeEnergy * 0.16;
+    return cell;
+  }
+
+  if (mode === "techno") {
+    cell.kick = index % 4 === 0;
+    cell.snare = index % 16 === 12;
+    cell.closedHat = index % 2 === 0 && index % 4 !== 0;
+    cell.openHat = index % 4 === 2;
+    cell.percussion = (index + seed) % 7 === 0 || chance < 0.08 + safeEnergy * 0.16;
+    cell.bass = index % 8 === 6;
+    cell.accent = index % 16 === 0 ? 1 : 0.82;
+    return cell;
+  }
+
+  // IDM keeps the downbeat intelligible, then lets the live data bend the
+  // remaining grid into broken, microtimed clusters.
+  cell.kick =
+    index === 0 ||
+    index === 16 ||
+    ([5, 7, 11, 19, 22, 27, 30].includes(index) && chance < 0.34 + safeEnergy * 0.45);
+  cell.snare = index === 8 || index === 24 || (index % 8 === 6 && chance < safeEnergy * 0.34);
+  cell.closedHat = index % 2 === 1 ? chance < 0.58 + safeEnergy * 0.3 : chance < 0.18;
+  cell.openHat = [3, 13, 21, 29].includes(index) && chance < 0.45 + safeEnergy * 0.4;
+  cell.percussion = chance < 0.22 + safeEnergy * 0.36;
+  cell.bass = [2, 10, 17, 26].includes(index) || (index % 8 === 7 && chance < 0.35);
+  cell.accent = 0.58 + ((variation >>> 8) % 43) / 100;
+  cell.microShift = (((variation >>> 16) % 13) - 6) * 0.0018;
+  return cell;
+}
+
 export function midiToFrequency(note) {
   return 440 * 2 ** ((note - 69) / 12);
 }

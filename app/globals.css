@@ -92,6 +92,36 @@ button {
   z-index: -3;
 }
 
+.kick-light {
+  position: absolute;
+  z-index: -2;
+  inset: -8%;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.96);
+  will-change: opacity, transform;
+}
+
+.kick-light.light-violet {
+  background: radial-gradient(circle at 50% 48%, rgba(151, 105, 255, 0.92), transparent 61%);
+}
+
+.kick-light.light-cyan {
+  background: radial-gradient(circle at 50% 48%, rgba(87, 228, 255, 0.86), transparent 61%);
+}
+
+.kick-light.light-amber {
+  background: radial-gradient(circle at 50% 48%, rgba(255, 190, 91, 0.88), transparent 61%);
+}
+
+.kick-light.light-coral {
+  background: radial-gradient(circle at 50% 48%, rgba(255, 100, 105, 0.9), transparent 61%);
+}
+
+.kick-light.light-white {
+  background: radial-gradient(circle at 50% 48%, rgba(241, 239, 249, 0.82), transparent 61%);
+}
+
 .grain {
   z-index: -2;
   opacity: 0.13;
@@ -1281,6 +1311,129 @@ button {
     radial-gradient(circle at 82% 55%, rgba(151, 105, 255, 0.085), transparent 26%);
 }
 
+.rhythm-module {
+  background:
+    radial-gradient(circle at 50% 5%, rgba(255, 100, 105, 0.075), transparent 40%),
+    linear-gradient(150deg, rgba(151, 105, 255, 0.045), transparent 62%);
+}
+
+.rhythm-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+}
+
+.rhythm-grid button {
+  display: grid;
+  min-height: 54px;
+  align-content: center;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.018);
+  color: rgba(241, 239, 249, 0.43);
+  text-align: left;
+  cursor: pointer;
+}
+
+.rhythm-grid button strong {
+  font: 550 7px/1 var(--font-geist-mono), monospace;
+  letter-spacing: 0.09em;
+}
+
+.rhythm-grid button small {
+  color: rgba(241, 239, 249, 0.26);
+  font: 450 6px/1 var(--font-geist-mono), monospace;
+  letter-spacing: 0.06em;
+}
+
+.rhythm-grid button:hover,
+.rhythm-grid button:focus-visible,
+.rhythm-grid button.is-selected {
+  outline: 0;
+  border-color: rgba(255, 100, 105, 0.48);
+  background: rgba(255, 100, 105, 0.07);
+  color: var(--coral);
+}
+
+.rhythm-description {
+  min-height: 30px;
+  margin-top: 13px !important;
+  font: 450 7px/1.45 var(--font-geist-mono), monospace;
+}
+
+.kick-light-controls {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.kick-light-controls > button {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.018);
+  color: rgba(241, 239, 249, 0.4);
+  font: 550 7px/1 var(--font-geist-mono), monospace;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.kick-light-controls > button i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.kick-light-controls > button.is-active {
+  border-color: rgba(87, 228, 255, 0.35);
+  color: var(--cyan);
+}
+
+.light-colors {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.light-colors button {
+  width: 28px;
+  min-height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--swatch);
+  cursor: pointer;
+}
+
+.light-colors button.light-violet {
+  --swatch: var(--violet);
+}
+
+.light-colors button.light-cyan {
+  --swatch: var(--cyan);
+}
+
+.light-colors button.light-amber {
+  --swatch: var(--amber);
+}
+
+.light-colors button.light-coral {
+  --swatch: var(--coral);
+}
+
+.light-colors button.light-white {
+  --swatch: var(--paper);
+}
+
+.light-colors button.is-selected {
+  border-color: #fff;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--swatch) 72%, transparent);
+}
+
 .synth-module > p {
   margin: 18px 0 0;
   color: rgba(241, 239, 249, 0.35);
@@ -1816,6 +1969,7 @@ button {
   }
 
   .patch-module,
+  .rhythm-module,
   .binaural-module {
     grid-column: 1 / -1;
     border-right: 0;
@@ -1862,6 +2016,10 @@ button {
   .signal-canvas {
     position: fixed;
     height: 100dvh;
+  }
+
+  .kick-light {
+    position: fixed;
   }
 
   .grain,
@@ -2104,6 +2262,7 @@ button {
   }
 
   .patch-module,
+  .rhythm-module,
   .binaural-module {
     grid-column: 1;
   }
@@ -2114,6 +2273,22 @@ button {
 
   .patch-grid button:last-child {
     grid-column: 1 / -1;
+  }
+
+  .rhythm-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .kick-light-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .light-colors {
+    justify-content: space-between;
+  }
+
+  .light-colors button {
+    flex: 1;
   }
 
   .headphone-advice {

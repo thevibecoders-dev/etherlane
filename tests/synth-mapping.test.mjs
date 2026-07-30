@@ -13,6 +13,8 @@ import {
   midiToFrequency,
   padChordForHealth,
   quantizeToScale,
+  rhythmProfiles,
+  rhythmStepFor,
   scaleIntervals,
 } from "../app/synth-math.mjs";
 
@@ -131,4 +133,57 @@ test("ensembleDetune is symmetric and correctly sized", () => {
   assert.ok(Math.abs(spread[0] + spread[2]) < 1e-9, "outer voices mirror");
   assert.ok(Math.abs(spread[1]) < 1e-9, "centre voice is at 0 cents");
   assert.deepEqual(ensembleDetune(1, 12), [0]);
+});
+
+test("electronic rhythm modes keep distinct musical identities", () => {
+  assert.equal(rhythmProfiles.edm.bpm, 126);
+  assert.equal(rhythmProfiles.techno.bpm, 132);
+  assert.equal(rhythmProfiles.idm.bpm, 112);
+  assert.equal(rhythmProfiles.ambient.bpm, 0);
+
+  const edm = Array.from({ length: 32 }, (_, step) => rhythmStepFor("edm", step, 42, 0.7));
+  const techno = Array.from({ length: 32 }, (_, step) =>
+    rhythmStepFor("techno", step, 42, 0.7),
+  );
+  const idm = Array.from({ length: 32 }, (_, step) => rhythmStepFor("idm", step, 42, 0.7));
+
+  assert.deepEqual(
+    edm.flatMap((cell, step) => (cell.kick ? [step] : [])),
+    [0, 4, 8, 12, 16, 20, 24, 28],
+  );
+  assert.deepEqual(
+    techno.flatMap((cell, step) => (cell.kick ? [step] : [])),
+    [0, 4, 8, 12, 16, 20, 24, 28],
+  );
+  assert.ok(idm.some((cell) => cell.microShift !== 0), "IDM should use microtiming");
+  assert.notDeepEqual(
+    idm.map((cell) => cell.kick),
+    edm.map((cell) => cell.kick),
+    "IDM kick geometry should be broken",
+  );
+  assert.ok(edm.filter((cell) => cell.bass).length > 0);
+  assert.ok(techno.filter((cell) => cell.percussion).length > 0);
+});
+
+test("signal energy creates deterministic but evolving drum details", () => {
+  const quiet = Array.from({ length: 32 }, (_, step) =>
+    rhythmStepFor("idm", step, 913, 0.1),
+  );
+  const busy = Array.from({ length: 32 }, (_, step) =>
+    rhythmStepFor("idm", step, 913, 1),
+  );
+  const details = (pattern) =>
+    pattern.filter((cell) => cell.percussion || cell.openHat || cell.closedHat).length;
+  assert.ok(details(busy) >= details(quiet));
+  assert.deepEqual(rhythmStepFor("idm", 19, 913, 0.8), rhythmStepFor("idm", 19, 913, 0.8));
+  assert.deepEqual(rhythmStepFor("ambient", 0, 99, 1), {
+    kick: false,
+    snare: false,
+    closedHat: false,
+    openHat: false,
+    percussion: false,
+    bass: false,
+    accent: 0.72,
+    microShift: 0,
+  });
 });

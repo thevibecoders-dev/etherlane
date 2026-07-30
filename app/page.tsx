@@ -7,9 +7,12 @@ import {
   EtherlaneBinaural,
   EtherlaneSynth,
   EtherlaneVoiceSpace,
+  rhythmPresets,
   type BinauralMode,
+  type KickPulse,
   type KeyName,
   type Palette,
+  type RhythmMode,
   type ScaleName,
   type SynthFrame,
   type SynthSettings,
@@ -32,6 +35,7 @@ type HealthState = "connecting" | "live" | "offline";
 type VoiceEngine = "piper" | "device";
 type VoiceDensity = "dream" | "full";
 type SynthPatch = "ether-bloom" | "glass-orbit" | "choir-void" | "deep-rest" | "signal-storm";
+type KickLightColor = "violet" | "cyan" | "amber" | "coral" | "white";
 
 type SignalEvent = {
   id: string;
@@ -195,6 +199,14 @@ const keyOptions: Array<{ value: KeyName; label: string }> = [
   { value: "A", label: "A" },
 ];
 
+const kickLightColors: Array<{ value: KickLightColor; label: string }> = [
+  { value: "violet", label: "VIOLET" },
+  { value: "cyan", label: "CYAN" },
+  { value: "amber", label: "AMBER" },
+  { value: "coral", label: "CORAL" },
+  { value: "white", label: "WHITE" },
+];
+
 const synthPatches: Array<{
   value: SynthPatch;
   label: string;
@@ -326,6 +338,7 @@ function dreamPhraseFor(event: SignalEvent) {
 
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const kickLightRef = useRef<HTMLDivElement | null>(null);
   const particlesRef = useRef<Particle[]>([]);
   const shockwavesRef = useRef<Shockwave[]>([]);
   const visualPacketsRef = useRef<VisualPacket[]>([]);
@@ -346,6 +359,7 @@ export default function Home() {
   const voiceBusyRef = useRef(false);
   const intensityRef = useRef(0.72);
   const voiceSpaceAmountRef = useRef(48);
+  const kickLightEnabledRef = useRef(true);
   const sourceEmitRef = useRef({
     ris: 0,
     atlas: 0,
@@ -399,6 +413,9 @@ export default function Home() {
   const [neuralVoiceProgress, setNeuralVoiceProgress] = useState(0);
   const [binauralEnabled, setBinauralEnabled] = useState(false);
   const [binauralMode, setBinauralMode] = useState<BinauralMode>("theta");
+  const [rhythmMode, setRhythmMode] = useState<RhythmMode>("ambient");
+  const [kickLightEnabled, setKickLightEnabled] = useState(true);
+  const [kickLightColor, setKickLightColor] = useState<KickLightColor>("violet");
   const [selectedPatch, setSelectedPatch] = useState<SynthPatch | "custom">("ether-bloom");
   const [spokenPhrase, setSpokenPhrase] = useState("VOICE CHANNEL STANDBY");
   const [synthSettings, setSynthSettings] = useState<SynthSettings>(defaultSynthSettings);
@@ -408,6 +425,8 @@ export default function Home() {
     source: "SYNTHETIC",
     energy: 0,
     voices: 0,
+    rhythm: "ambient",
+    bpm: 0,
   });
   const [paused, setPaused] = useState(false);
   const [intensity, setIntensity] = useState(72);
@@ -449,6 +468,10 @@ export default function Home() {
   useEffect(() => {
     synthRef.current?.setSettings(synthSettings);
   }, [synthSettings]);
+
+  useEffect(() => {
+    kickLightEnabledRef.current = kickLightEnabled;
+  }, [kickLightEnabled]);
 
   useEffect(() => {
     const live = sourceKeys.filter((source) => sourceHealth[source] === "live").length;
@@ -1501,12 +1524,36 @@ export default function Home() {
     setVoiceAvailable(Boolean(voice));
   };
 
+  const pulseKickLight = useCallback((pulse: KickPulse) => {
+    if (!kickLightEnabledRef.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+    const light = kickLightRef.current;
+    if (!light) return;
+    light.getAnimations().forEach((animation) => animation.cancel());
+    light.animate(
+      [
+        { opacity: 0, transform: "scale(0.96)" },
+        { opacity: String(0.16 + pulse.energy * 0.32), transform: "scale(1)" },
+        { opacity: 0, transform: "scale(1.045)" },
+      ],
+      {
+        duration: pulse.mode === "techno" ? 340 : pulse.mode === "edm" ? 300 : 230,
+        easing: "cubic-bezier(0.16, 0.8, 0.3, 1)",
+      },
+    );
+  }, []);
+
   const toggleMusic = async () => {
     if (!synthRef.current) {
-      synthRef.current = new EtherlaneSynth((frame) => setSynthFrame(frame));
+      synthRef.current = new EtherlaneSynth(
+        (frame) => setSynthFrame(frame),
+        pulseKickLight,
+      );
       synthRef.current.setSettings(synthSettings);
       synthRef.current.setIntensity(intensityRef.current);
       synthRef.current.setHealth(sourceKeys.filter((source) => sourceHealth[source] === "live").length);
+      synthRef.current.setRhythmMode(rhythmMode);
     }
     if (musicEnabled) {
       synthRef.current.stop();
@@ -1515,6 +1562,11 @@ export default function Home() {
     }
     const started = await synthRef.current.start();
     setMusicEnabled(started);
+  };
+
+  const chooseRhythmMode = (mode: RhythmMode) => {
+    setRhythmMode(mode);
+    synthRef.current?.setRhythmMode(mode);
   };
 
   const updateSynth = <Key extends keyof SynthSettings>(key: Key, value: SynthSettings[Key]) => {
@@ -1563,6 +1615,13 @@ export default function Home() {
       }`}
     >
       <canvas ref={canvasRef} className="signal-canvas" aria-hidden="true" />
+      <div
+        ref={kickLightRef}
+        className={`kick-light light-${kickLightColor} ${
+          kickLightEnabled && rhythmMode !== "ambient" ? "is-armed" : ""
+        }`}
+        aria-hidden="true"
+      />
       <div className="grain" aria-hidden="true" />
       <div className="scanline" aria-hidden="true" />
 
@@ -1647,7 +1706,13 @@ export default function Home() {
           className={`voice-transmission ${audioEnabled || musicEnabled ? "is-speaking" : ""}`}
           aria-live="polite"
         >
-          <small>{musicEnabled ? "AMBIENT SYNTH / LIVE" : audioEnabled ? "NOW VOICING" : "AUDIO CHANNELS"}</small>
+          <small>
+            {musicEnabled
+              ? `${rhythmPresets[rhythmMode].label} SYNTH / LIVE`
+              : audioEnabled
+                ? "NOW VOICING"
+                : "AUDIO CHANNELS"}
+          </small>
           <strong>
             {musicEnabled
               ? `${synthFrame.source} · ${synthFrame.note} · ${synthFrame.voices} VOICES`
@@ -1759,7 +1824,7 @@ export default function Home() {
             ))}
           </span>
           <span>
-            <small>AMBIENT SYNTH</small>
+            <small>{rhythmMode === "ambient" ? "AMBIENT SYNTH" : `${rhythmMode.toUpperCase()} DATA RHYTHM`}</small>
             <strong>{musicEnabled ? synthFrame.chord : "ENTER SYNTH"}</strong>
           </span>
         </button>
@@ -1896,7 +1961,10 @@ export default function Home() {
               <div className="synth-readout" aria-live="polite">
                 <span className={musicEnabled ? "is-live" : ""}>{musicEnabled ? "RUNNING" : "STANDBY"}</span>
                 <strong>{synthFrame.note}</strong>
-                <small>{synthFrame.source} / {Math.round(synthFrame.energy)}% ENERGY</small>
+                <small>
+                  {synthFrame.source} / {Math.round(synthFrame.energy)}% ENERGY /{" "}
+                  {rhythmMode === "ambient" ? "FREE TIME" : `${rhythmPresets[rhythmMode].bpm} BPM`}
+                </small>
               </div>
               <button className="close-button" type="button" onClick={() => setShowSynth(false)} aria-label="Close">
                 ×
@@ -2175,9 +2243,62 @@ export default function Home() {
                 </p>
               </section>
 
-              <section className="synth-module binaural-module">
+              <section className="synth-module rhythm-module">
                 <div className="module-title">
                   <span>07</span>
+                  <div>
+                    <strong>DATA RHYTHM</strong>
+                    <small>PROCEDURAL DRUM MACHINE</small>
+                  </div>
+                </div>
+                <div className="rhythm-grid" aria-label="Music and drum style">
+                  {(Object.entries(rhythmPresets) as Array<
+                    [RhythmMode, (typeof rhythmPresets)[RhythmMode]]
+                  >).map(([mode, preset]) => (
+                    <button
+                      className={rhythmMode === mode ? "is-selected" : ""}
+                      type="button"
+                      key={mode}
+                      onClick={() => chooseRhythmMode(mode)}
+                      aria-pressed={rhythmMode === mode}
+                    >
+                      <strong>{preset.label}</strong>
+                      <small>{preset.bpm ? `${preset.bpm} BPM` : "NO DRUMS"}</small>
+                    </button>
+                  ))}
+                </div>
+                <p className="rhythm-description">{rhythmPresets[rhythmMode].description}. Signal volume, source and event type mutate fills, accents and syncopation.</p>
+                <div className="kick-light-controls">
+                  <button
+                    className={kickLightEnabled ? "is-active" : ""}
+                    type="button"
+                    onClick={() => setKickLightEnabled((enabled) => !enabled)}
+                    aria-pressed={kickLightEnabled}
+                  >
+                    <i aria-hidden="true" />
+                    KICK LIGHT {kickLightEnabled ? "ON" : "OFF"}
+                  </button>
+                  <div className="light-colors" aria-label="Kick light colour">
+                    {kickLightColors.map((color) => (
+                      <button
+                        className={`light-${color.value} ${
+                          kickLightColor === color.value ? "is-selected" : ""
+                        }`}
+                        type="button"
+                        key={color.value}
+                        title={color.label}
+                        onClick={() => setKickLightColor(color.value)}
+                        aria-label={`${color.label} kick light`}
+                        aria-pressed={kickLightColor === color.value}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              <section className="synth-module binaural-module">
+                <div className="module-title">
+                  <span>08</span>
                   <div>
                     <strong>BINAURAL MEDITATION</strong>
                     <small>TRUE STEREO CARRIER PAIR</small>

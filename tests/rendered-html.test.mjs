@@ -134,7 +134,7 @@ test("expands both routing vocabulary and signal-driven visual forms", async () 
   assert.match(css, /\.signal-canvas\s*\{[\s\S]*position:\s*fixed/);
 });
 
-test("ships an immersive ambient synth without recording or persistence", async () => {
+test("ships an immersive generative synth without recording or persistence", async () => {
   const [page, engine, math, css] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/synth-engine.ts", import.meta.url), "utf8"),
@@ -153,8 +153,9 @@ test("ships an immersive ambient synth without recording or persistence", async 
     assert.match(engine, new RegExp(audioNode));
   }
 
-  // Ambient, event-driven design — not a step sequencer.
-  assert.doesNotMatch(engine, /% 16|step \+ 1|BPM|tempo/);
+  // Ambient pads remain event-driven; the optional drums use a precise
+  // AudioContext look-ahead scheduler.
+  assert.match(engine, /scheduleRhythmWindow/);
   assert.match(engine, /padChordForHealth/);
   assert.match(engine, /makeHallImpulse/);
   assert.match(engine, /now - this\.lastAccentAt < 70/); // precedence-effect spacing
@@ -166,18 +167,46 @@ test("ships an immersive ambient synth without recording or persistence", async 
   assert.match(engine, /feedbackR/);
   assert.match(engine, /breathBuffer/);
   assert.match(engine, /palette === "choir"/);
+  assert.match(engine, /this\.nextRhythmAt < horizon/);
+  assert.match(engine, /window\.setInterval\(\(\) => this\.scheduleRhythmWindow\(\), 25\)/);
+  assert.match(engine, /triggerKick/);
+  assert.match(engine, /triggerNoiseDrum/);
+  assert.match(engine, /triggerPercussion/);
+  assert.match(engine, /triggerBass/);
+  assert.match(engine, /frequency\.exponentialRampToValueAtTime/);
+  assert.match(engine, /drumNoiseBuffer/);
   assert.match(engine, /0\.12 \+ \(next\.delay \/ 100\) \* 0\.34/);
   assert.doesNotMatch(engine, /feedback\.connect\(delayL\)|feedback\.connect\(delayR\)/);
   assert.match(math, /quantizeToScale/);
   assert.match(math, /padChordForHealth/);
+  assert.match(math, /rhythmStepFor/);
+  assert.match(math, /label:\s*"EDM"/);
+  assert.match(math, /label:\s*"TECHNO"/);
+  assert.match(math, /label:\s*"IDM"/);
   assert.doesNotMatch(engine, /MediaRecorder|localStorage|sessionStorage|indexedDB|document\.cookie/i);
+  assert.doesNotMatch(engine, /fetch\(|new Audio\(|createMediaElementSource/);
 
-  for (const control of ["VOICE", "HARMONY", "TONE", "MOTION", "WARMTH", "VOICE REVERB"]) {
+  for (const control of [
+    "VOICE",
+    "HARMONY",
+    "TONE",
+    "MOTION",
+    "WARMTH",
+    "VOICE REVERB",
+    "DATA RHYTHM",
+    "PROCEDURAL DRUM MACHINE",
+    "KICK LIGHT",
+  ]) {
     assert.match(page, new RegExp(control));
   }
 
   assert.match(page, /Raw messages never enter the audio graph and nothing is recorded/);
   assert.match(css, /\.synth-card/);
+  assert.match(css, /\.kick-light/);
+  assert.match(css, /\.rhythm-grid/);
+  assert.match(css, /\.light-colors/);
+  assert.match(page, /prefers-reduced-motion: reduce/);
+  assert.match(page, /light\.animate/);
 });
 
 test("keeps enhanced voice processing local and ships touch-ready mobile layouts", async () => {

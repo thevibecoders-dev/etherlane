@@ -8,6 +8,9 @@ voice. Its EL-01 Signal Synth quantizes those events into generative music.
 ## Ambient Signal Synth
 
 - Continuously evolving modal pads instead of a repeating step sequence
+- Selectable ambient, 126 BPM EDM, 132 BPM techno and broken 112 BPM IDM modes
+- Procedural kick, snare, hats, percussion and bass generated entirely with Web Audio
+- Public signal identity and energy mutate fills, accents, syncopation and IDM microtiming
 - Source-health harmony with smooth crossfades through six chord positions
 - Signal-driven bowed accents, safely bounded ping-pong delay, hall reverb and limiting
 - Distinct strings, glass and choir palettes with live shimmer updates
@@ -20,6 +23,7 @@ voice. Its EL-01 Signal Synth quantizes those events into generative music.
 - Different 310 ms left and 470 ms right voice delays with bounded cross-feedback
 - Four true-stereo binaural modes with a visible headphones advisory
 - No samples, recording, uploads or audio persistence
+- Optional kick-synchronised ambient light with five colours and a reduced-motion safeguard
 
 ## Visual fields
 
@@ -27,6 +31,7 @@ voice. Its EL-01 Signal Synth quantizes those events into generative music.
 - Neural: moving nodes create new multi-hop routes for every public event
 - Matrix: normalized packet codes fall through the scene as ephemeral code rain
 - Mobile uses a 24 fps, 1x-pixel-density profile with lower particle and glow counts
+- Kick light uses one short composited pulse per beat and can be switched off
 - Official Cloudflare, GitHub, Fastly and Google Cloud status changes add visual pressure
 - Root DNS health is observed through two public resolvers and the root operator overview
 - Confirmed disruption raises red signal density, network speed and musical tension
