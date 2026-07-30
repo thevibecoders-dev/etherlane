@@ -1,6 +1,36 @@
+// Etherlane immersive ambient engine.
+//
+// Two layers, both event-driven — no step sequencer, no "chiptune" blips:
+//   1. A sustained supersaw STRING PAD whose chord follows how many public
+//      feeds are live (1 = root drone, 2 = root+fifth, 3 = full add9 shimmer).
+//   2. Soft, bowed ACCENT voices triggered by real signals, pitch quantised to
+//      a musical scale, spaced by >=70 ms (precedence effect) so dense traffic
+//      stays legible instead of turning to mud.
+//
+// Everything runs through a lush convolution reverb + ensemble chorus + stereo
+// delay + a soft master limiter, so the whole thing reads as one warm space.
+// Pure, side-effect-free helpers live at the top so they can be unit-tested in
+// Node without a Web Audio context (see tests/synth-mapping.test.mjs).
+
+import {
+  accentForSignal,
+  clamp,
+  ensembleDetune,
+  midiToFrequency,
+  midiToName,
+  padChordForHealth,
+} from "./synth-math.mjs";
+
 export type SynthSource = "RIS" | "ATLAS" | "WIKIMEDIA" | "SYNTHETIC";
 export type SynthTone = "violet" | "cyan" | "amber" | "coral";
-export type ScaleName = "minor-pentatonic" | "dorian" | "lydian" | "whole-tone";
+export type ScaleName =
+  | "aeolian"
+  | "dorian"
+  | "lydian"
+  | "minor-pentatonic"
+  | "major-pentatonic";
+export type KeyName = "C" | "D" | "E" | "F" | "G" | "A";
+export type Palette = "strings" | "glass" | "choir";
 
 export type MusicSignal = {
   source: SynthSource;
@@ -11,74 +41,72 @@ export type MusicSignal = {
 };
 
 export type SynthSettings = {
-  tempo: number;
-  density: number;
-  cutoff: number;
-  resonance: number;
-  delay: number;
+  /** Reverb amount (0-100) — size of the room. */
   space: number;
-  waveform: OscillatorType;
+  /** Master low-pass warmth (0-100) — lower = darker/softer. */
+  warmth: number;
+  /** Ensemble chorus/detune width (0-100). */
+  shimmer: number;
+  /** Filter/pitch movement depth (0-100). */
+  drift: number;
+  /** Stereo delay send (0-100). */
+  delay: number;
+  /** Master output level (0-100). */
+  master: number;
   scale: ScaleName;
+  key: KeyName;
+  palette: Palette;
 };
 
 export type SynthFrame = {
-  step: number;
+  chord: string;
   note: string;
   source: SynthSource;
   energy: number;
+  voices: number;
 };
 
 export const defaultSynthSettings: SynthSettings = {
-  tempo: 92,
-  density: 62,
-  cutoff: 2800,
-  resonance: 5.5,
-  delay: 32,
-  space: 38,
-  waveform: "sawtooth",
-  scale: "minor-pentatonic",
+  space: 62,
+  warmth: 58,
+  shimmer: 48,
+  drift: 40,
+  delay: 30,
+  master: 70,
+  scale: "aeolian",
+  key: "D",
+  palette: "strings",
 };
 
-const scales: Record<ScaleName, number[]> = {
-  "minor-pentatonic": [0, 3, 5, 7, 10],
-  dorian: [0, 2, 3, 5, 7, 9, 10],
-  lydian: [0, 2, 4, 6, 7, 9, 11],
-  "whole-tone": [0, 2, 4, 6, 8, 10],
+// ---------------------------------------------------------------------------
+// Web Audio engine (browser only). Everything below touches AudioContext.
+// ---------------------------------------------------------------------------
+
+type PadVoice = {
+  oscillators: OscillatorNode[];
+  gain: GainNode;
+  midi: number;
 };
 
-const noteNames = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
-
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function hashText(value: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return Math.abs(hash);
-}
-
-function midiToFrequency(note: number) {
-  return 440 * 2 ** ((note - 69) / 12);
-}
-
-function midiToName(note: number) {
-  return `${noteNames[((note % 12) + 12) % 12]}${Math.floor(note / 12) - 1}`;
-}
-
-function makeImpulse(context: AudioContext, seconds = 2.8) {
-  const length = Math.floor(context.sampleRate * seconds);
-  const impulse = context.createBuffer(2, length, context.sampleRate);
-  for (let channel = 0; channel < impulse.numberOfChannels; channel += 1) {
+function makeHallImpulse(context: BaseAudioContext, seconds: number, decay: number) {
+  const rate = context.sampleRate;
+  const length = Math.floor(rate * seconds);
+  const impulse = context.createBuffer(2, length, rate);
+  for (let channel = 0; channel < 2; channel += 1) {
     const data = impulse.getChannelData(channel);
-    let seed = 1193 + channel * 811;
+    let seed = 22222 + channel * 4099;
+    // A few early reflections for a sense of a real room.
+    const reflections = [0.011, 0.019, 0.027, 0.041, 0.058];
     for (let index = 0; index < length; index += 1) {
       seed = (seed * 16807) % 2147483647;
       const noise = (seed / 2147483647) * 2 - 1;
-      data[index] = noise * (1 - index / length) ** 3.1;
+      const t = index / length;
+      let sample = noise * (1 - t) ** decay;
+      const timeSec = index / rate;
+      for (const r of reflections) {
+        if (Math.abs(timeSec - r) < 1 / rate) sample += (channel ? -1 : 1) * 0.5;
+      }
+      data[index] = sample;
     }
   }
   return impulse;
@@ -86,76 +114,123 @@ function makeImpulse(context: AudioContext, seconds = 2.8) {
 
 export class EtherlaneSynth {
   private context: AudioContext | null = null;
-  private input: GainNode | null = null;
-  private master: GainNode | null = null;
-  private filter: BiquadFilterNode | null = null;
-  private delay: DelayNode | null = null;
+  private masterBus: GainNode | null = null;
+  private padBus: GainNode | null = null;
+  private accentBus: GainNode | null = null;
+  private padFilter: BiquadFilterNode | null = null;
+  private filterLfo: OscillatorNode | null = null;
+  private filterLfoGain: GainNode | null = null;
+  private reverbSend: GainNode | null = null;
+  private delayL: DelayNode | null = null;
+  private delayR: DelayNode | null = null;
   private delaySend: GainNode | null = null;
   private feedback: GainNode | null = null;
-  private reverbSend: GainNode | null = null;
-  private scheduler: number | null = null;
-  private nextStepAt = 0;
-  private step = 0;
-  private running = false;
+  private limiter: DynamicsCompressorNode | null = null;
+
+  private padVoices: PadVoice[] = [];
+  private activeAccents = 0;
   private queue: MusicSignal[] = [];
+  private drainTimer: number | null = null;
+  private lastAccentAt = 0;
+  private running = false;
+  private liveCount = 1;
+  private intensity = 0.72;
   private lastSignal: MusicSignal = {
     source: "SYNTHETIC",
-    kind: "AMBIENT CLOCK",
-    magnitude: 42,
+    kind: "AMBIENT",
+    magnitude: 40,
     tone: "violet",
     timestamp: 0,
   };
   private settings: SynthSettings = { ...defaultSynthSettings };
+  private readonly onFrame: (frame: SynthFrame) => void;
 
-  constructor(private readonly onFrame: (frame: SynthFrame) => void) {}
+  constructor(onFrame: (frame: SynthFrame) => void) {
+    this.onFrame = onFrame;
+  }
 
   setSettings(next: SynthSettings) {
+    const scaleChanged = next.scale !== this.settings.scale || next.key !== this.settings.key;
     this.settings = { ...next };
-    if (!this.context || !this.filter || !this.delaySend || !this.reverbSend || !this.feedback) return;
+    if (!this.context) return;
     const now = this.context.currentTime;
-    this.filter.frequency.setTargetAtTime(next.cutoff, now, 0.08);
-    this.filter.Q.setTargetAtTime(next.resonance, now, 0.08);
-    this.delaySend.gain.setTargetAtTime(next.delay / 100, now, 0.08);
-    this.feedback.gain.setTargetAtTime(0.18 + (next.delay / 100) * 0.48, now, 0.08);
-    this.reverbSend.gain.setTargetAtTime(next.space / 100, now, 0.08);
+    const softClamp = 0.12;
+    this.padFilter?.frequency.setTargetAtTime(this.warmthHz(), now, softClamp);
+    this.reverbSend?.gain.setTargetAtTime((next.space / 100) * 0.9, now, softClamp);
+    this.delaySend?.gain.setTargetAtTime((next.delay / 100) * 0.5, now, softClamp);
+    this.feedback?.gain.setTargetAtTime(0.2 + (next.delay / 100) * 0.42, now, softClamp);
+    this.filterLfoGain?.gain.setTargetAtTime((next.drift / 100) * 900, now, softClamp);
+    this.masterBus?.gain.setTargetAtTime(this.running ? (next.master / 100) * 0.9 : 0.0001, now, softClamp);
+    if (scaleChanged && this.running) this.retunePad();
+  }
+
+  /** Number of live public feeds (0-3) — drives the pad chord. */
+  setHealth(liveCount: number) {
+    const clamped = clamp(Math.round(liveCount), 0, 3);
+    if (clamped === this.liveCount) return;
+    this.liveCount = clamped;
+    if (this.running) this.retunePad();
+  }
+
+  /** Global intensity (0-1) — scales movement + accent energy. */
+  setIntensity(value: number) {
+    this.intensity = clamp(value, 0, 1);
   }
 
   push(signal: MusicSignal) {
     this.lastSignal = signal;
     if (!this.running) return;
     this.queue.push(signal);
-    this.queue = this.queue.slice(-48);
+    this.queue = this.queue.slice(-32);
   }
 
   async start() {
     this.ensureGraph();
-    if (!this.context || !this.master) return false;
+    if (!this.context || !this.masterBus) return false;
     await this.context.resume();
     this.running = true;
-    this.master.gain.cancelScheduledValues(this.context.currentTime);
-    this.master.gain.setTargetAtTime(0.58, this.context.currentTime, 0.04);
-    this.nextStepAt = this.context.currentTime + 0.05;
-    if (this.scheduler === null) {
-      this.scheduler = window.setInterval(() => this.scheduleAhead(), 24);
+    const now = this.context.currentTime;
+    this.masterBus.gain.cancelScheduledValues(now);
+    this.masterBus.gain.setValueAtTime(0.0001, now);
+    this.masterBus.gain.setTargetAtTime((this.settings.master / 100) * 0.9, now, 0.6);
+    this.retunePad();
+    if (this.drainTimer === null) {
+      this.drainTimer = window.setInterval(() => this.drainQueue(), 45);
     }
     return true;
   }
 
   stop() {
+    if (!this.context || !this.masterBus) {
+      this.running = false;
+      return;
+    }
+    const now = this.context.currentTime;
+    this.masterBus.gain.cancelScheduledValues(now);
+    this.masterBus.gain.setTargetAtTime(0.0001, now, 0.5);
     this.running = false;
     this.queue = [];
-    if (this.context && this.master) {
-      this.master.gain.cancelScheduledValues(this.context.currentTime);
-      this.master.gain.setTargetAtTime(0.0001, this.context.currentTime, 0.035);
-    }
+    window.setTimeout(() => this.clearPad(), 1600);
   }
 
   dispose() {
-    if (this.scheduler !== null) window.clearInterval(this.scheduler);
-    this.scheduler = null;
+    if (this.drainTimer !== null) window.clearInterval(this.drainTimer);
+    this.drainTimer = null;
     this.running = false;
+    this.clearPad();
+    try {
+      this.filterLfo?.stop();
+    } catch {
+      // already stopped
+    }
     void this.context?.close();
     this.context = null;
+  }
+
+  private warmthHz() {
+    // 300 Hz (very dark) .. 6000 Hz (open), curved for musical taste.
+    const t = this.settings.warmth / 100;
+    return 300 + t ** 1.8 * 5700;
   }
 
   private ensureGraph() {
@@ -164,188 +239,245 @@ export class EtherlaneSynth {
       window.AudioContext ||
       (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextClass) return;
-
     const context = new AudioContextClass();
-    const input = context.createGain();
-    const filter = context.createBiquadFilter();
-    const dry = context.createGain();
-    const delay = context.createDelay(1.5);
-    const delaySend = context.createGain();
-    const feedback = context.createGain();
+
+    const masterBus = context.createGain();
+    const limiter = context.createDynamicsCompressor();
+    const highShelf = context.createBiquadFilter();
+
+    const padBus = context.createGain();
+    const accentBus = context.createGain();
+    const padFilter = context.createBiquadFilter();
+
     const reverb = context.createConvolver();
     const reverbSend = context.createGain();
-    const compressor = context.createDynamicsCompressor();
-    const master = context.createGain();
 
-    filter.type = "lowpass";
-    filter.frequency.value = this.settings.cutoff;
-    filter.Q.value = this.settings.resonance;
-    dry.gain.value = 0.82;
-    delay.delayTime.value = 0.31;
-    delaySend.gain.value = this.settings.delay / 100;
-    feedback.gain.value = 0.18 + (this.settings.delay / 100) * 0.48;
-    reverb.buffer = makeImpulse(context);
-    reverbSend.gain.value = this.settings.space / 100;
-    compressor.threshold.value = -18;
-    compressor.knee.value = 18;
-    compressor.ratio.value = 5;
-    compressor.attack.value = 0.008;
-    compressor.release.value = 0.24;
-    master.gain.value = 0.0001;
+    const delayL = context.createDelay(1.5);
+    const delayR = context.createDelay(1.5);
+    const delaySend = context.createGain();
+    const feedback = context.createGain();
 
-    input.connect(filter);
-    filter.connect(dry).connect(compressor);
-    filter.connect(delaySend).connect(delay).connect(compressor);
-    delay.connect(feedback).connect(delay);
-    filter.connect(reverbSend).connect(reverb).connect(compressor);
-    compressor.connect(master).connect(context.destination);
+    // Master chain: [buses] -> highShelf -> limiter -> destination
+    limiter.threshold.value = -3.5;
+    limiter.knee.value = 12;
+    limiter.ratio.value = 12;
+    limiter.attack.value = 0.004;
+    limiter.release.value = 0.25;
+    highShelf.type = "highshelf";
+    highShelf.frequency.value = 5200;
+    highShelf.gain.value = -3.5; // tame fizz for a warmer top end
+    masterBus.gain.value = 0.0001;
+
+    padFilter.type = "lowpass";
+    padFilter.frequency.value = this.warmthHz();
+    padFilter.Q.value = 0.6;
+
+    reverb.buffer = makeHallImpulse(context, 4.6, 2.6);
+    reverbSend.gain.value = (this.settings.space / 100) * 0.9;
+
+    delayL.delayTime.value = 0.38;
+    delayR.delayTime.value = 0.53; // offset for stereo spread
+    delaySend.gain.value = (this.settings.delay / 100) * 0.5;
+    feedback.gain.value = 0.2 + (this.settings.delay / 100) * 0.42;
+
+    // Slow filter movement (drift).
+    const filterLfo = context.createOscillator();
+    const filterLfoGain = context.createGain();
+    filterLfo.type = "sine";
+    filterLfo.frequency.value = 0.06;
+    filterLfoGain.gain.value = (this.settings.drift / 100) * 900;
+    filterLfo.connect(filterLfoGain).connect(padFilter.frequency);
+    filterLfo.start();
+
+    // Routing.
+    padBus.connect(padFilter);
+    padFilter.connect(highShelf); // dry pad
+    accentBus.connect(highShelf); // dry accents
+
+    // Sends (post-filter for pad, direct for accents via a tap).
+    padFilter.connect(reverbSend);
+    accentBus.connect(reverbSend);
+    reverbSend.connect(reverb).connect(highShelf);
+
+    padFilter.connect(delaySend);
+    accentBus.connect(delaySend);
+    delaySend.connect(delayL);
+    delaySend.connect(delayR);
+    delayL.connect(feedback);
+    delayR.connect(feedback);
+    feedback.connect(delayL);
+    feedback.connect(delayR);
+    const delayMergeL = context.createStereoPanner();
+    const delayMergeR = context.createStereoPanner();
+    delayMergeL.pan.value = -0.6;
+    delayMergeR.pan.value = 0.6;
+    delayL.connect(delayMergeL).connect(highShelf);
+    delayR.connect(delayMergeR).connect(highShelf);
+
+    highShelf.connect(limiter).connect(masterBus).connect(context.destination);
 
     this.context = context;
-    this.input = input;
-    this.master = master;
-    this.filter = filter;
-    this.delay = delay;
+    this.masterBus = masterBus;
+    this.padBus = padBus;
+    this.accentBus = accentBus;
+    this.padFilter = padFilter;
+    this.filterLfo = filterLfo;
+    this.filterLfoGain = filterLfoGain;
+    this.reverbSend = reverbSend;
+    this.delayL = delayL;
+    this.delayR = delayR;
     this.delaySend = delaySend;
     this.feedback = feedback;
-    this.reverbSend = reverbSend;
+    this.limiter = limiter;
   }
 
-  private scheduleAhead() {
-    if (!this.running || !this.context) return;
-    const secondsPerStep = 60 / this.settings.tempo / 4;
-    while (this.nextStepAt < this.context.currentTime + 0.12) {
-      this.scheduleStep(this.step, this.nextStepAt);
-      this.step = (this.step + 1) % 16;
-      this.nextStepAt += secondsPerStep;
+  private retunePad() {
+    if (!this.context || !this.padBus) return;
+    const chord = padChordForHealth(this.liveCount, this.settings.scale, this.settings.key);
+    const wanted = new Set(chord);
+    // Fade out voices no longer in the chord.
+    this.padVoices = this.padVoices.filter((voice) => {
+      if (wanted.has(voice.midi)) return true;
+      this.fadeOutPadVoice(voice);
+      return false;
+    });
+    // Add new voices.
+    const existing = new Set(this.padVoices.map((v) => v.midi));
+    for (const midi of chord) {
+      if (!existing.has(midi)) this.padVoices.push(this.spawnPadVoice(midi));
     }
+    this.onFrame({
+      chord: chord.map(midiToName).join(" "),
+      note: midiToName(chord[0]),
+      source: this.lastSignal.source,
+      energy: this.lastSignal.magnitude,
+      voices: this.padVoices.length + this.activeAccents,
+    });
   }
 
-  private scheduleStep(step: number, at: number) {
-    const signal = this.queue.shift() ?? this.lastSignal;
-    const seed = hashText(`${signal.source}:${signal.kind}:${Math.round(signal.magnitude)}:${step}`);
-    const densityThreshold = clamp(this.settings.density, 20, 100);
-    const isAnchor = step === 0 || step === 4 || step === 8 || step === 12;
-    if (!isAnchor && seed % 100 > densityThreshold) {
-      this.onFrame({ step, note: "REST", source: signal.source, energy: signal.magnitude });
+  private spawnPadVoice(midi: number): PadVoice {
+    const context = this.context!;
+    const now = context.currentTime;
+    const gain = context.createGain();
+    const freq = midiToFrequency(midi);
+    const width = 4 + (this.settings.shimmer / 100) * 16;
+    const detunes = ensembleDetune(3, width);
+    const oscillators = detunes.map((cents) => {
+      const osc = context.createOscillator();
+      osc.type = this.settings.palette === "glass" ? "triangle" : "sawtooth";
+      osc.frequency.value = freq;
+      osc.detune.value = cents;
+      osc.connect(gain);
+      osc.start(now);
+      return osc;
+    });
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.setTargetAtTime(0.06, now, 1.4); // slow bowed swell
+    gain.connect(this.padBus!);
+    return { oscillators, gain, midi };
+  }
+
+  private fadeOutPadVoice(voice: PadVoice) {
+    const context = this.context!;
+    const now = context.currentTime;
+    voice.gain.gain.cancelScheduledValues(now);
+    voice.gain.gain.setTargetAtTime(0.0001, now, 0.8);
+    voice.oscillators.forEach((osc) => {
+      try {
+        osc.stop(now + 3);
+      } catch {
+        // ignore
+      }
+    });
+  }
+
+  private clearPad() {
+    this.padVoices.forEach((voice) => {
+      try {
+        voice.gain.disconnect();
+        voice.oscillators.forEach((osc) => osc.stop());
+      } catch {
+        // ignore
+      }
+    });
+    this.padVoices = [];
+  }
+
+  private drainQueue() {
+    if (!this.running || !this.context) return;
+    const now = performance.now();
+    if (this.queue.length === 0) return;
+    if (now - this.lastAccentAt < 70) return; // precedence effect spacing
+    if (this.activeAccents > 12) {
+      this.queue.shift(); // drop rather than pile up
       return;
     }
-
-    const scale = scales[this.settings.scale];
-    const sourceOffset = {
-      RIS: -12,
-      ATLAS: 12,
-      WIKIMEDIA: 19,
-      SYNTHETIC: 0,
-    }[signal.source];
-    const root = 45 + sourceOffset;
-    const degree = scale[seed % scale.length];
-    const octave = Math.floor((seed / scale.length) % 2) * 12;
-    const midi = root + degree + octave;
-    const velocity = clamp(0.18 + signal.magnitude / 150, 0.2, 0.82);
-
-    if (signal.source === "WIKIMEDIA" && (step % 4 === 0 || /CREATED/.test(signal.kind))) {
-      const chord = [midi, midi + scale[Math.min(2, scale.length - 1)], midi + 12];
-      chord.forEach((note, index) => this.triggerVoice(note, at + index * 0.018, velocity * 0.46, signal, 1.1));
-    } else if (signal.source === "RIS") {
-      this.triggerVoice(midi, at, velocity, signal, /WITHDRAWN|NOTIFICATION/.test(signal.kind) ? 0.78 : 1.8);
-      if (step % 8 === 0) this.triggerSubPulse(midi - 12, at, velocity * 0.72);
-    } else if (signal.source === "ATLAS") {
-      this.triggerVoice(midi, at, velocity * 0.78, signal, 0.22);
-    } else {
-      this.triggerVoice(midi, at, velocity * 0.54, signal, 1.6);
-    }
-
-    if ((step === 0 || step === 8) && this.settings.density > 45) {
-      this.triggerNoise(at, signal.magnitude / 100);
-    }
-
-    this.onFrame({ step, note: midiToName(midi), source: signal.source, energy: signal.magnitude });
+    const signal = this.queue.shift()!;
+    this.lastAccentAt = now;
+    this.triggerAccent(signal);
   }
 
-  private triggerVoice(
-    midi: number,
-    at: number,
-    velocity: number,
-    signal: MusicSignal,
-    release: number,
-  ) {
-    if (!this.context || !this.input) return;
-    const oscillator = this.context.createOscillator();
-    const companion = this.context.createOscillator();
-    const envelope = this.context.createGain();
-    const voiceFilter = this.context.createBiquadFilter();
-    const pan = this.context.createStereoPanner();
-    const frequency = midiToFrequency(midi);
-    const brightness = clamp(
-      this.settings.cutoff * (0.46 + signal.magnitude / 145),
-      220,
-      9200,
+  private triggerAccent(signal: MusicSignal) {
+    if (!this.context || !this.accentBus) return;
+    const context = this.context;
+    const at = context.currentTime + 0.02;
+    const { midi, velocity, attack, release, pan, bright } = accentForSignal(
+      signal,
+      this.settings.scale,
+      this.settings.key,
     );
+    const freq = midiToFrequency(midi);
+    const level = velocity * (0.5 + this.intensity * 0.6);
 
-    oscillator.type = this.settings.waveform;
-    oscillator.frequency.setValueAtTime(frequency, at);
-    companion.type = signal.source === "ATLAS" ? "sine" : "triangle";
-    companion.frequency.setValueAtTime(frequency * (signal.source === "RIS" ? 0.5 : 1.005), at);
-    oscillator.detune.value = signal.tone === "coral" ? -8 : 4;
-    companion.detune.value = signal.tone === "amber" ? 9 : -4;
-    voiceFilter.type = "lowpass";
-    voiceFilter.frequency.setValueAtTime(brightness, at);
-    voiceFilter.Q.value = 1.4 + this.settings.resonance * 0.52;
-    if (/WITHDRAWN|NOTIFICATION|HIGH LATENCY/.test(signal.kind)) {
-      voiceFilter.frequency.exponentialRampToValueAtTime(Math.max(180, brightness * 0.24), at + release);
-    }
-    pan.pan.value = { RIS: -0.36, ATLAS: 0.34, WIKIMEDIA: 0.1, SYNTHETIC: -0.08 }[
-      signal.source
-    ];
+    const gain = context.createGain();
+    const filter = context.createBiquadFilter();
+    const panner = context.createStereoPanner();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(clamp(700 + bright * 4200, 400, 6500), at);
+    filter.Q.value = 0.8;
+    panner.pan.value = pan;
 
-    const attack = signal.source === "WIKIMEDIA" ? 0.08 : signal.source === "ATLAS" ? 0.005 : 0.025;
-    const peak = velocity * 0.16;
-    envelope.gain.setValueAtTime(0.0001, at);
-    envelope.gain.exponentialRampToValueAtTime(Math.max(0.001, peak), at + attack);
-    envelope.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * 0.42), at + attack + 0.12);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, at + release);
+    // Bowed-string timbre: two detuned saws + a soft sub, gentle attack.
+    const oscA = context.createOscillator();
+    const oscB = context.createOscillator();
+    const sub = context.createOscillator();
+    oscA.type = this.settings.palette === "glass" ? "triangle" : "sawtooth";
+    oscB.type = oscA.type;
+    sub.type = "sine";
+    oscA.frequency.value = freq;
+    oscB.frequency.value = freq;
+    sub.frequency.value = freq / 2;
+    oscA.detune.value = -6;
+    oscB.detune.value = 6;
+    const subGain = context.createGain();
+    subGain.gain.value = signal.source === "RIS" ? 0.4 : 0.18;
 
-    oscillator.connect(voiceFilter);
-    companion.connect(voiceFilter);
-    voiceFilter.connect(pan).connect(envelope).connect(this.input);
-    oscillator.start(at);
-    companion.start(at);
-    oscillator.stop(at + release + 0.05);
-    companion.stop(at + release + 0.05);
-  }
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0015, level * 0.32), at + attack);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0008, level * 0.16), at + attack + 0.25);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + attack + release);
 
-  private triggerSubPulse(midi: number, at: number, velocity: number) {
-    if (!this.context || !this.input) return;
-    const oscillator = this.context.createOscillator();
-    const envelope = this.context.createGain();
-    oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(midiToFrequency(midi), at);
-    oscillator.frequency.exponentialRampToValueAtTime(midiToFrequency(midi - 5), at + 0.22);
-    envelope.gain.setValueAtTime(Math.max(0.001, velocity * 0.12), at);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, at + 0.28);
-    oscillator.connect(envelope).connect(this.input);
-    oscillator.start(at);
-    oscillator.stop(at + 0.3);
-  }
+    oscA.connect(filter);
+    oscB.connect(filter);
+    sub.connect(subGain).connect(filter);
+    filter.connect(panner).connect(gain).connect(this.accentBus);
 
-  private triggerNoise(at: number, energy: number) {
-    if (!this.context || !this.input) return;
-    const buffer = this.context.createBuffer(1, Math.floor(this.context.sampleRate * 0.09), this.context.sampleRate);
-    const data = buffer.getChannelData(0);
-    let seed = 733;
-    for (let index = 0; index < data.length; index += 1) {
-      seed = (seed * 48271) % 2147483647;
-      data[index] = ((seed / 2147483647) * 2 - 1) * (1 - index / data.length);
-    }
-    const source = this.context.createBufferSource();
-    const highpass = this.context.createBiquadFilter();
-    const envelope = this.context.createGain();
-    source.buffer = buffer;
-    highpass.type = "highpass";
-    highpass.frequency.value = 2800;
-    envelope.gain.setValueAtTime(0.025 + energy * 0.035, at);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, at + 0.08);
-    source.connect(highpass).connect(envelope).connect(this.input);
-    source.start(at);
+    const stopAt = at + attack + release + 0.1;
+    [oscA, oscB, sub].forEach((osc) => {
+      osc.start(at);
+      osc.stop(stopAt);
+    });
+    this.activeAccents += 1;
+    oscA.onended = () => {
+      this.activeAccents = Math.max(0, this.activeAccents - 1);
+    };
+
+    this.onFrame({
+      chord: this.padVoices.map((v) => midiToName(v.midi)).join(" "),
+      note: midiToName(midi),
+      source: signal.source,
+      energy: signal.magnitude,
+      voices: this.padVoices.length + this.activeAccents,
+    });
   }
 }

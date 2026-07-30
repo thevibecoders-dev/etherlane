@@ -37,7 +37,7 @@ test("server-renders the Etherlane experience and metadata", async () => {
   assert.match(html, /RIPE RIS/);
   assert.match(html, /RIPE ATLAS/);
   assert.match(html, /WIKIMEDIA/);
-  assert.match(html, /GENERATIVE MUSIC/);
+  assert.match(html, /AMBIENT SYNTH/);
   assert.match(html, /SIGNAL SYNTH/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|VibeVeilig/i);
 });
@@ -91,10 +91,11 @@ test("expands both routing vocabulary and signal-driven visual forms", async () 
   assert.match(css, /@keyframes transmit/);
 });
 
-test("ships a signal-driven subtractive synth without recording or persistence", async () => {
-  const [page, engine, css] = await Promise.all([
+test("ships an immersive ambient synth without recording or persistence", async () => {
+  const [page, engine, math, css] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/synth-engine.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/synth-math.mjs", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
@@ -109,28 +110,20 @@ test("ships a signal-driven subtractive synth without recording or persistence",
     assert.match(engine, new RegExp(audioNode));
   }
 
-  assert.match(engine, /step = \(this\.step \+ 1\) % 16/);
-  assert.match(engine, /this\.queue = this\.queue\.slice\(-48\)/);
-  assert.match(engine, /RIS:\s*-12/);
-  assert.match(engine, /ATLAS:\s*12/);
-  assert.match(engine, /WIKIMEDIA:\s*19/);
-  assert.match(engine, /source === "WIKIMEDIA".*CREATED/s);
-  assert.match(engine, /source === "RIS"/);
-  assert.match(engine, /source === "ATLAS"/);
+  // Ambient, event-driven design — not a step sequencer.
+  assert.doesNotMatch(engine, /% 16|step \+ 1|BPM|tempo/);
+  assert.match(engine, /padChordForHealth/);
+  assert.match(engine, /makeHallImpulse/);
+  assert.match(engine, /now - this\.lastAccentAt < 70/); // precedence-effect spacing
+  assert.match(engine, /setHealth/);
+  assert.match(math, /quantizeToScale/);
+  assert.match(math, /padChordForHealth/);
   assert.doesNotMatch(engine, /MediaRecorder|localStorage|sessionStorage|indexedDB|document\.cookie/i);
 
-  for (const control of [
-    "OSCILLATOR",
-    "HARMONY",
-    "LOW PASS",
-    "SIGNAL CLOCK",
-    "DELAY",
-    "REVERB",
-  ]) {
+  for (const control of ["VOICE", "HARMONY", "TONE", "MOTION", "WARMTH", "REVERB"]) {
     assert.match(page, new RegExp(control));
   }
 
   assert.match(page, /Raw messages never enter the audio graph and nothing is recorded/);
   assert.match(css, /\.synth-card/);
-  assert.match(css, /\.step-sequencer/);
 });

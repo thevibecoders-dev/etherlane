@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   defaultSynthSettings,
   EtherlaneSynth,
+  type KeyName,
+  type Palette,
   type ScaleName,
   type SynthFrame,
   type SynthSettings,
@@ -90,18 +92,27 @@ const risKinds: Record<string, { kind: string; label: string; tone: SignalTone }
   },
 };
 
-const waveformOptions: Array<{ value: OscillatorType; label: string }> = [
-  { value: "sawtooth", label: "SAW" },
-  { value: "triangle", label: "TRI" },
-  { value: "square", label: "SQR" },
-  { value: "sine", label: "SIN" },
+const paletteOptions: Array<{ value: Palette; label: string; hint: string }> = [
+  { value: "strings", label: "STRINGS", hint: "Warm bowed ensemble" },
+  { value: "glass", label: "GLASS", hint: "Soft triangular sheen" },
+  { value: "choir", label: "CHOIR", hint: "Breathy vocal air" },
 ];
 
 const scaleOptions: Array<{ value: ScaleName; label: string }> = [
-  { value: "minor-pentatonic", label: "MINOR PENTA" },
+  { value: "aeolian", label: "AEOLIAN" },
   { value: "dorian", label: "DORIAN" },
   { value: "lydian", label: "LYDIAN" },
-  { value: "whole-tone", label: "WHOLE TONE" },
+  { value: "minor-pentatonic", label: "MINOR PENTA" },
+  { value: "major-pentatonic", label: "MAJOR PENTA" },
+];
+
+const keyOptions: Array<{ value: KeyName; label: string }> = [
+  { value: "C", label: "C" },
+  { value: "D", label: "D" },
+  { value: "E", label: "E" },
+  { value: "F", label: "F" },
+  { value: "G", label: "G" },
+  { value: "A", label: "A" },
 ];
 
 function formatTime(timestamp: number) {
@@ -169,10 +180,11 @@ export default function Home() {
   const [spokenPhrase, setSpokenPhrase] = useState("VOICE CHANNEL STANDBY");
   const [synthSettings, setSynthSettings] = useState<SynthSettings>(defaultSynthSettings);
   const [synthFrame, setSynthFrame] = useState<SynthFrame>({
-    step: 0,
-    note: "REST",
+    chord: "—",
+    note: "—",
     source: "SYNTHETIC",
     energy: 0,
+    voices: 0,
   });
   const [paused, setPaused] = useState(false);
   const [intensity, setIntensity] = useState(72);
@@ -191,11 +203,20 @@ export default function Home() {
 
   useEffect(() => {
     intensityRef.current = intensity / 100;
+    synthRef.current?.setIntensity(intensity / 100);
   }, [intensity]);
 
   useEffect(() => {
     synthRef.current?.setSettings(synthSettings);
   }, [synthSettings]);
+
+  useEffect(() => {
+    const live =
+      Number(sourceHealth.ris === "live") +
+      Number(sourceHealth.atlas === "live") +
+      Number(sourceHealth.wikimedia === "live");
+    synthRef.current?.setHealth(live);
+  }, [sourceHealth]);
 
   useEffect(
     () => () => {
@@ -753,6 +774,12 @@ export default function Home() {
     if (!synthRef.current) {
       synthRef.current = new EtherlaneSynth((frame) => setSynthFrame(frame));
       synthRef.current.setSettings(synthSettings);
+      synthRef.current.setIntensity(intensityRef.current);
+      synthRef.current.setHealth(
+        Number(sourceHealth.ris === "live") +
+          Number(sourceHealth.atlas === "live") +
+          Number(sourceHealth.wikimedia === "live"),
+      );
     }
     if (musicEnabled) {
       synthRef.current.stop();
@@ -850,10 +877,10 @@ export default function Home() {
           className={`voice-transmission ${audioEnabled || musicEnabled ? "is-speaking" : ""}`}
           aria-live="polite"
         >
-          <small>{musicEnabled ? "SIGNAL SYNTH / LIVE" : audioEnabled ? "NOW VOICING" : "AUDIO CHANNELS"}</small>
+          <small>{musicEnabled ? "AMBIENT SYNTH / LIVE" : audioEnabled ? "NOW VOICING" : "AUDIO CHANNELS"}</small>
           <strong>
             {musicEnabled
-              ? `${synthFrame.source} · STEP ${String(synthFrame.step + 1).padStart(2, "0")} · ${synthFrame.note}`
+              ? `${synthFrame.source} · ${synthFrame.note} · ${synthFrame.voices} VOICES`
               : spokenPhrase}
           </strong>
           <span aria-hidden="true">
@@ -910,12 +937,12 @@ export default function Home() {
         >
           <span className="sequence-icon" aria-hidden="true">
             {Array.from({ length: 8 }, (_, index) => (
-              <i className={musicEnabled && synthFrame.step % 8 === index ? "is-current" : ""} key={index} />
+              <i className={musicEnabled && index < synthFrame.voices ? "is-current" : ""} key={index} />
             ))}
           </span>
           <span>
-            <small>GENERATIVE MUSIC</small>
-            <strong>{musicEnabled ? `${synthFrame.note} / ${synthSettings.tempo} BPM` : "ENTER SYNTH"}</strong>
+            <small>AMBIENT SYNTH</small>
+            <strong>{musicEnabled ? synthFrame.chord : "ENTER SYNTH"}</strong>
           </span>
         </button>
 
@@ -1036,14 +1063,9 @@ export default function Home() {
               </button>
             </header>
 
-            <div className="step-sequencer" aria-label={`Sequencer step ${synthFrame.step + 1} of 16`}>
-              {Array.from({ length: 16 }, (_, index) => (
-                <i
-                  className={`${synthFrame.step === index ? "is-current" : ""} ${
-                    index % 4 === 0 ? "is-beat" : ""
-                  }`}
-                  key={index}
-                />
+            <div className="voice-scope" aria-hidden="true">
+              {Array.from({ length: 24 }, (_, index) => (
+                <i className={musicEnabled && index < synthFrame.voices * 3 ? "is-lit" : ""} key={index} />
               ))}
             </div>
 
@@ -1052,25 +1074,25 @@ export default function Home() {
                 <div className="module-title">
                   <span>01</span>
                   <div>
-                    <strong>OSCILLATOR</strong>
-                    <small>TIMBRE SOURCE</small>
+                    <strong>VOICE</strong>
+                    <small>ENSEMBLE PALETTE</small>
                   </div>
                 </div>
-                <div className="choice-grid" aria-label="Oscillator waveform">
-                  {waveformOptions.map((option) => (
+                <div className="choice-grid" aria-label="Instrument palette">
+                  {paletteOptions.map((option) => (
                     <button
-                      className={synthSettings.waveform === option.value ? "is-selected" : ""}
+                      className={synthSettings.palette === option.value ? "is-selected" : ""}
                       type="button"
                       key={option.value}
-                      onClick={() => updateSynth("waveform", option.value)}
-                      aria-pressed={synthSettings.waveform === option.value}
+                      onClick={() => updateSynth("palette", option.value)}
+                      aria-pressed={synthSettings.palette === option.value}
                     >
-                      <i className={`wave-${option.value}`} aria-hidden="true" />
+                      <i className={`palette-${option.value}`} aria-hidden="true" />
                       {option.label}
                     </button>
                   ))}
                 </div>
-                <p>Dual detuned voices. Signal type determines octave, envelope and stereo position.</p>
+                <p>A sustained detuned string ensemble. The live-source count sets the chord; signals add bowed voices.</p>
               </section>
 
               <section className="synth-module scale-module">
@@ -1094,36 +1116,47 @@ export default function Home() {
                     </button>
                   ))}
                 </div>
+                <div className="scale-choices key-choices" aria-label="Musical key">
+                  {keyOptions.map((option) => (
+                    <button
+                      className={synthSettings.key === option.value ? "is-selected" : ""}
+                      type="button"
+                      key={option.value}
+                      onClick={() => updateSynth("key", option.value)}
+                      aria-pressed={synthSettings.key === option.value}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </section>
 
               <section className="synth-module filter-module">
                 <div className="module-title">
                   <span>03</span>
                   <div>
-                    <strong>LOW PASS</strong>
-                    <small>SUBTRACTIVE FILTER</small>
+                    <strong>TONE</strong>
+                    <small>WARMTH / ENSEMBLE</small>
                   </div>
                 </div>
                 <label className="synth-slider">
-                  <span>CUTOFF <output>{Math.round(synthSettings.cutoff)} HZ</output></span>
-                  <input
-                    type="range"
-                    min="280"
-                    max="8800"
-                    step="20"
-                    value={synthSettings.cutoff}
-                    onChange={(event) => updateSynth("cutoff", Number(event.target.value))}
-                  />
-                </label>
-                <label className="synth-slider">
-                  <span>RESONANCE <output>{synthSettings.resonance.toFixed(1)}</output></span>
+                  <span>WARMTH <output>{synthSettings.warmth}%</output></span>
                   <input
                     type="range"
                     min="0"
-                    max="18"
-                    step="0.5"
-                    value={synthSettings.resonance}
-                    onChange={(event) => updateSynth("resonance", Number(event.target.value))}
+                    max="100"
+                    value={synthSettings.warmth}
+                    onChange={(event) => updateSynth("warmth", Number(event.target.value))}
+                  />
+                </label>
+                <label className="synth-slider">
+                  <span>SHIMMER <output>{synthSettings.shimmer}%</output></span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={synthSettings.shimmer}
+                    onChange={(event) => updateSynth("shimmer", Number(event.target.value))}
                   />
                 </label>
               </section>
@@ -1132,28 +1165,28 @@ export default function Home() {
                 <div className="module-title">
                   <span>04</span>
                   <div>
-                    <strong>SIGNAL CLOCK</strong>
-                    <small>EVENT QUANTIZER</small>
+                    <strong>MOTION</strong>
+                    <small>DRIFT / OUTPUT</small>
                   </div>
                 </div>
                 <label className="synth-slider">
-                  <span>TEMPO <output>{synthSettings.tempo} BPM</output></span>
+                  <span>DRIFT <output>{synthSettings.drift}%</output></span>
                   <input
                     type="range"
-                    min="54"
-                    max="148"
-                    value={synthSettings.tempo}
-                    onChange={(event) => updateSynth("tempo", Number(event.target.value))}
+                    min="0"
+                    max="100"
+                    value={synthSettings.drift}
+                    onChange={(event) => updateSynth("drift", Number(event.target.value))}
                   />
                 </label>
                 <label className="synth-slider">
-                  <span>DENSITY <output>{synthSettings.density}%</output></span>
+                  <span>MASTER <output>{synthSettings.master}%</output></span>
                   <input
                     type="range"
-                    min="20"
+                    min="0"
                     max="100"
-                    value={synthSettings.density}
-                    onChange={(event) => updateSynth("density", Number(event.target.value))}
+                    value={synthSettings.master}
+                    onChange={(event) => updateSynth("master", Number(event.target.value))}
                   />
                 </label>
               </section>
@@ -1171,7 +1204,7 @@ export default function Home() {
                   <input
                     type="range"
                     min="0"
-                    max="72"
+                    max="100"
                     value={synthSettings.delay}
                     onChange={(event) => updateSynth("delay", Number(event.target.value))}
                   />
@@ -1181,7 +1214,7 @@ export default function Home() {
                   <input
                     type="range"
                     min="0"
-                    max="78"
+                    max="100"
                     value={synthSettings.space}
                     onChange={(event) => updateSynth("space", Number(event.target.value))}
                   />
