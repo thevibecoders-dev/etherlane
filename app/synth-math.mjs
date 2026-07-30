@@ -60,17 +60,17 @@ export function quantizeToScale(degreeIndex, scale, key, octaveSpan = 3) {
 
 /**
  * Sustained pad chord (MIDI notes) for a given number of live feeds.
- * 0-1 => root + octave; 2 => add fifth; 3 => full add9 shimmer.
+ * The evolution step moves through a slow modal progression while keeping
+ * every note inside the selected scale.
  */
-export function padChordForHealth(liveCount, scale, key) {
-  const root = keyRootMidi[key];
-  const intervals = scaleIntervals[scale];
-  const third = intervals.find((i) => i === 3 || i === 4) ?? intervals[1] ?? 3;
-  const fifth = intervals.find((i) => i === 7) ?? 7;
-  const ninth = 14;
-  if (liveCount >= 3) return [root, root + fifth, root + 12, root + 12 + third, root + 12 + ninth];
-  if (liveCount === 2) return [root, root + fifth, root + 12];
-  return [root, root + 12];
+export function padChordForHealth(liveCount, scale, key, evolutionStep = 0) {
+  const progression = [0, 3, 5, 1, 4, 2];
+  const rootDegree = progression[((evolutionStep % progression.length) + progression.length) % progression.length];
+  const note = (degree) => quantizeToScale(rootDegree + degree, scale, key, 5);
+  if (liveCount >= 4) return [note(0), note(4), note(7), note(9), note(15), note(18)];
+  if (liveCount >= 3) return [note(0), note(4), note(7), note(9), note(15)];
+  if (liveCount === 2) return [note(0), note(4), note(7)];
+  return [note(0), note(7)];
 }
 
 /** Translate a signal into the musical parameters of one accent voice. */
@@ -80,6 +80,9 @@ export function accentForSignal(signal, scale, key) {
     RIS: -7, // low, structural
     WIKIMEDIA: 0,
     ATLAS: 7, // high, bell-like pings
+    GITHUB: 4,
+    HACKERNEWS: 2,
+    BLOCKCHAIN: -4,
     SYNTHETIC: -2,
   };
   // ATLAS: fast return (low magnitude) => bright/high; high latency => low/dark.
@@ -90,9 +93,22 @@ export function accentForSignal(signal, scale, key) {
   // octave so they always read as "something left" regardless of hash jitter.
   const midi = quantizeToScale(baseDegree + 7, scale, key) - (descending ? 12 : 0);
   const velocity = clamp(0.16 + signal.magnitude / 190, 0.16, 0.7);
-  const attack = signal.source === "ATLAS" ? 0.05 : signal.source === "WIKIMEDIA" ? 0.14 : 0.22;
+  const attack =
+    signal.source === "ATLAS"
+      ? 0.05
+      : signal.source === "WIKIMEDIA" || signal.source === "GITHUB"
+        ? 0.14
+        : 0.22;
   const release = descending ? 3.4 : 2.2 + (signal.magnitude / 100) * 1.8;
-  const pan = { RIS: -0.4, ATLAS: 0.38, WIKIMEDIA: 0.12, SYNTHETIC: -0.1 }[signal.source];
+  const pan = {
+    RIS: -0.4,
+    ATLAS: 0.38,
+    WIKIMEDIA: 0.12,
+    GITHUB: 0.56,
+    HACKERNEWS: -0.18,
+    BLOCKCHAIN: -0.58,
+    SYNTHETIC: -0.1,
+  }[signal.source];
   const bright =
     signal.tone === "cyan" ? 1 : signal.tone === "amber" ? 0.7 : signal.tone === "coral" ? 0.45 : 0.85;
   return { midi, velocity, attack, release, pan, bright };

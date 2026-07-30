@@ -21,7 +21,14 @@ import {
   padChordForHealth,
 } from "./synth-math.mjs";
 
-export type SynthSource = "RIS" | "ATLAS" | "WIKIMEDIA" | "SYNTHETIC";
+export type SynthSource =
+  | "RIS"
+  | "ATLAS"
+  | "WIKIMEDIA"
+  | "GITHUB"
+  | "HACKERNEWS"
+  | "BLOCKCHAIN"
+  | "SYNTHETIC";
 export type SynthTone = "violet" | "cyan" | "amber" | "coral";
 export type ScaleName =
   | "aeolian"
@@ -83,7 +90,7 @@ export const defaultSynthSettings: SynthSettings = {
 // ---------------------------------------------------------------------------
 
 type PadVoice = {
-  oscillators: OscillatorNode[];
+  sources: AudioScheduledSourceNode[];
   gain: GainNode;
   midi: number;
 };
@@ -212,13 +219,18 @@ export class EtherlaneSynth {
   private delayL: DelayNode | null = null;
   private delayR: DelayNode | null = null;
   private delaySend: GainNode | null = null;
-  private feedback: GainNode | null = null;
+  private feedbackL: GainNode | null = null;
+  private feedbackR: GainNode | null = null;
   private limiter: DynamicsCompressorNode | null = null;
+  private breathBuffer: AudioBuffer | null = null;
 
   private padVoices: PadVoice[] = [];
   private activeAccents = 0;
   private queue: MusicSignal[] = [];
   private drainTimer: number | null = null;
+  private evolutionTimer: number | null = null;
+  private padClearTimer: number | null = null;
+  private evolutionStep = 0;
   private lastAccentAt = 0;
   private running = false;
   private liveCount = 1;
@@ -239,6 +251,8 @@ export class EtherlaneSynth {
 
   setSettings(next: SynthSettings) {
     const scaleChanged = next.scale !== this.settings.scale || next.key !== this.settings.key;
+    const timbreChanged =
+      next.palette !== this.settings.palette || next.shimmer !== this.settings.shimmer;
     this.settings = { ...next };
     if (!this.context) return;
     const now = this.context.currentTime;
@@ -246,15 +260,17 @@ export class EtherlaneSynth {
     this.padFilter?.frequency.setTargetAtTime(this.warmthHz(), now, softClamp);
     this.reverbSend?.gain.setTargetAtTime((next.space / 100) * 0.9, now, softClamp);
     this.delaySend?.gain.setTargetAtTime((next.delay / 100) * 0.5, now, softClamp);
-    this.feedback?.gain.setTargetAtTime(0.2 + (next.delay / 100) * 0.42, now, softClamp);
+    const safeFeedback = 0.12 + (next.delay / 100) * 0.34;
+    this.feedbackL?.gain.setTargetAtTime(safeFeedback, now, softClamp);
+    this.feedbackR?.gain.setTargetAtTime(safeFeedback, now, softClamp);
     this.filterLfoGain?.gain.setTargetAtTime((next.drift / 100) * 900, now, softClamp);
     this.masterBus?.gain.setTargetAtTime(this.running ? (next.master / 100) * 0.9 : 0.0001, now, softClamp);
-    if (scaleChanged && this.running) this.retunePad();
+    if ((scaleChanged || timbreChanged) && this.running) this.retunePad(timbreChanged);
   }
 
   /** Number of live public feeds (0-3) — drives the pad chord. */
   setHealth(liveCount: number) {
-    const clamped = clamp(Math.round(liveCount), 0, 3);
+    const clamped = clamp(Math.round(liveCount), 0, 6);
     if (clamped === this.liveCount) return;
     this.liveCount = clamped;
     if (this.running) this.retunePad();
@@ -276,6 +292,10 @@ export class EtherlaneSynth {
     this.ensureGraph();
     if (!this.context || !this.masterBus) return false;
     await this.context.resume();
+    if (this.padClearTimer !== null) {
+      window.clearTimeout(this.padClearTimer);
+      this.padClearTimer = null;
+    }
     this.running = true;
     const now = this.context.currentTime;
     this.masterBus.gain.cancelScheduledValues(now);
@@ -285,6 +305,7 @@ export class EtherlaneSynth {
     if (this.drainTimer === null) {
       this.drainTimer = window.setInterval(() => this.drainQueue(), 45);
     }
+    this.scheduleEvolution();
     return true;
   }
 
@@ -298,12 +319,22 @@ export class EtherlaneSynth {
     this.masterBus.gain.setTargetAtTime(0.0001, now, 0.5);
     this.running = false;
     this.queue = [];
-    window.setTimeout(() => this.clearPad(), 1600);
+    if (this.evolutionTimer !== null) window.clearTimeout(this.evolutionTimer);
+    this.evolutionTimer = null;
+    if (this.padClearTimer !== null) window.clearTimeout(this.padClearTimer);
+    this.padClearTimer = window.setTimeout(() => {
+      if (!this.running) this.clearPad();
+      this.padClearTimer = null;
+    }, 1600);
   }
 
   dispose() {
     if (this.drainTimer !== null) window.clearInterval(this.drainTimer);
     this.drainTimer = null;
+    if (this.evolutionTimer !== null) window.clearTimeout(this.evolutionTimer);
+    if (this.padClearTimer !== null) window.clearTimeout(this.padClearTimer);
+    this.evolutionTimer = null;
+    this.padClearTimer = null;
     this.running = false;
     this.clearPad();
     try {
@@ -343,7 +374,8 @@ export class EtherlaneSynth {
     const delayL = context.createDelay(1.5);
     const delayR = context.createDelay(1.5);
     const delaySend = context.createGain();
-    const feedback = context.createGain();
+    const feedbackL = context.createGain();
+    const feedbackR = context.createGain();
 
     // Master chain: [buses] -> highShelf -> limiter -> destination
     limiter.threshold.value = -3.5;
@@ -366,7 +398,8 @@ export class EtherlaneSynth {
     delayL.delayTime.value = 0.38;
     delayR.delayTime.value = 0.53; // offset for stereo spread
     delaySend.gain.value = (this.settings.delay / 100) * 0.5;
-    feedback.gain.value = 0.2 + (this.settings.delay / 100) * 0.42;
+    feedbackL.gain.value = 0.12 + (this.settings.delay / 100) * 0.34;
+    feedbackR.gain.value = feedbackL.gain.value;
 
     // Slow filter movement (drift).
     const filterLfo = context.createOscillator();
@@ -391,10 +424,8 @@ export class EtherlaneSynth {
     accentBus.connect(delaySend);
     delaySend.connect(delayL);
     delaySend.connect(delayR);
-    delayL.connect(feedback);
-    delayR.connect(feedback);
-    feedback.connect(delayL);
-    feedback.connect(delayR);
+    delayL.connect(feedbackL).connect(delayR);
+    delayR.connect(feedbackR).connect(delayL);
     const delayMergeL = context.createStereoPanner();
     const delayMergeR = context.createStereoPanner();
     delayMergeL.pan.value = -0.6;
@@ -415,14 +446,32 @@ export class EtherlaneSynth {
     this.delayL = delayL;
     this.delayR = delayR;
     this.delaySend = delaySend;
-    this.feedback = feedback;
+    this.feedbackL = feedbackL;
+    this.feedbackR = feedbackR;
     this.limiter = limiter;
+    const breathBuffer = context.createBuffer(1, Math.floor(context.sampleRate * 0.7), context.sampleRate);
+    const breathData = breathBuffer.getChannelData(0);
+    let breathSeed = 9191;
+    for (let index = 0; index < breathData.length; index += 1) {
+      breathSeed = (breathSeed * 16807) % 2147483647;
+      breathData[index] = ((breathSeed / 2147483647) * 2 - 1) * 0.7;
+    }
+    this.breathBuffer = breathBuffer;
   }
 
-  private retunePad() {
+  private retunePad(forceRebuild = false) {
     if (!this.context || !this.padBus) return;
-    const chord = padChordForHealth(this.liveCount, this.settings.scale, this.settings.key);
+    const chord = padChordForHealth(
+      this.liveCount,
+      this.settings.scale,
+      this.settings.key,
+      this.evolutionStep,
+    );
     const wanted = new Set(chord);
+    if (forceRebuild) {
+      this.padVoices.forEach((voice) => this.fadeOutPadVoice(voice));
+      this.padVoices = [];
+    }
     // Fade out voices no longer in the chord.
     this.padVoices = this.padVoices.filter((voice) => {
       if (wanted.has(voice.midi)) return true;
@@ -450,19 +499,38 @@ export class EtherlaneSynth {
     const freq = midiToFrequency(midi);
     const width = 4 + (this.settings.shimmer / 100) * 16;
     const detunes = ensembleDetune(3, width);
-    const oscillators = detunes.map((cents) => {
+    const sources: AudioScheduledSourceNode[] = detunes.map((cents) => {
       const osc = context.createOscillator();
-      osc.type = this.settings.palette === "glass" ? "triangle" : "sawtooth";
+      osc.type =
+        this.settings.palette === "glass"
+          ? "triangle"
+          : this.settings.palette === "choir"
+            ? "sine"
+            : "sawtooth";
       osc.frequency.value = freq;
       osc.detune.value = cents;
       osc.connect(gain);
       osc.start(now);
       return osc;
     });
+    if (this.settings.palette === "choir" && this.breathBuffer) {
+      const breath = context.createBufferSource();
+      const breathFilter = context.createBiquadFilter();
+      const breathGain = context.createGain();
+      breath.buffer = this.breathBuffer;
+      breath.loop = true;
+      breathFilter.type = "bandpass";
+      breathFilter.frequency.value = clamp(freq * 4.2, 480, 1900);
+      breathFilter.Q.value = 0.72;
+      breathGain.gain.value = 0.24;
+      breath.connect(breathFilter).connect(breathGain).connect(gain);
+      breath.start(now);
+      sources.push(breath);
+    }
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.setTargetAtTime(0.06, now, 1.4); // slow bowed swell
+    gain.gain.setTargetAtTime(this.settings.palette === "choir" ? 0.082 : 0.06, now, 1.4);
     gain.connect(this.padBus!);
-    return { oscillators, gain, midi };
+    return { sources, gain, midi };
   }
 
   private fadeOutPadVoice(voice: PadVoice) {
@@ -470,9 +538,9 @@ export class EtherlaneSynth {
     const now = context.currentTime;
     voice.gain.gain.cancelScheduledValues(now);
     voice.gain.gain.setTargetAtTime(0.0001, now, 0.8);
-    voice.oscillators.forEach((osc) => {
+    voice.sources.forEach((source) => {
       try {
-        osc.stop(now + 3);
+        source.stop(now + 3);
       } catch {
         // ignore
       }
@@ -483,12 +551,24 @@ export class EtherlaneSynth {
     this.padVoices.forEach((voice) => {
       try {
         voice.gain.disconnect();
-        voice.oscillators.forEach((osc) => osc.stop());
+        voice.sources.forEach((source) => source.stop());
       } catch {
         // ignore
       }
     });
     this.padVoices = [];
+  }
+
+  private scheduleEvolution() {
+    if (!this.running) return;
+    if (this.evolutionTimer !== null) window.clearTimeout(this.evolutionTimer);
+    const wait = 7600 + (1 - this.intensity) * 5400;
+    this.evolutionTimer = window.setTimeout(() => {
+      if (!this.running) return;
+      this.evolutionStep = (this.evolutionStep + 1) % 6;
+      this.retunePad(true);
+      this.scheduleEvolution();
+    }, wait);
   }
 
   private drainQueue() {
@@ -529,7 +609,12 @@ export class EtherlaneSynth {
     const oscA = context.createOscillator();
     const oscB = context.createOscillator();
     const sub = context.createOscillator();
-    oscA.type = this.settings.palette === "glass" ? "triangle" : "sawtooth";
+    oscA.type =
+      this.settings.palette === "glass"
+        ? "triangle"
+        : this.settings.palette === "choir"
+          ? "sine"
+          : "sawtooth";
     oscB.type = oscA.type;
     sub.type = "sine";
     oscA.frequency.value = freq;

@@ -12,9 +12,18 @@ import {
   type SynthSettings,
 } from "./synth-engine";
 
-type SignalSource = "RIS" | "ATLAS" | "WIKIMEDIA" | "SYNTHETIC";
+type SignalSource =
+  | "RIS"
+  | "ATLAS"
+  | "WIKIMEDIA"
+  | "GITHUB"
+  | "HACKERNEWS"
+  | "BLOCKCHAIN"
+  | "SYNTHETIC";
 type SignalTone = "violet" | "cyan" | "amber" | "coral";
 type SignalShape = "beam" | "ring" | "packet" | "spark";
+type VisualizationMode = "flow" | "neural" | "matrix";
+type HealthState = "connecting" | "live" | "offline";
 
 type SignalEvent = {
   id: string;
@@ -48,11 +57,39 @@ type Shockwave = {
   shape: SignalShape;
 };
 
-type SourceHealth = {
-  ris: "connecting" | "live" | "offline";
-  atlas: "connecting" | "live" | "offline";
-  wikimedia: "connecting" | "live" | "offline";
+type VisualPacket = {
+  tone: SignalTone;
+  code: string;
+  progress: number;
+  speed: number;
+  lane: number;
+  from: number;
+  to: number;
 };
+
+type SourceHealth = {
+  ris: HealthState;
+  atlas: HealthState;
+  wikimedia: HealthState;
+  github: HealthState;
+  hackernews: HealthState;
+  blockchain: HealthState;
+};
+
+const sourceKeys: Array<keyof SourceHealth> = [
+  "ris",
+  "atlas",
+  "wikimedia",
+  "github",
+  "hackernews",
+  "blockchain",
+];
+
+const visualizations: Array<{ value: VisualizationMode; label: string; hint: string }> = [
+  { value: "flow", label: "FLOW", hint: "Signal highway" },
+  { value: "neural", label: "NEURAL", hint: "Node transmission" },
+  { value: "matrix", label: "MATRIX", hint: "Packet code rain" },
+];
 
 const tones: Record<SignalTone, { rgb: string; hex: string }> = {
   violet: { rgb: "151, 105, 255", hex: "#9769ff" },
@@ -91,6 +128,17 @@ const risKinds: Record<string, { kind: string; label: string; tone: SignalTone }
     label: "A route collector observed a peer state change",
     tone: "amber",
   },
+};
+
+const githubKinds: Record<string, { kind: string; tone: SignalTone; spoken: string }> = {
+  PushEvent: { kind: "CODE PUSHED", tone: "cyan", spoken: "Code pushed to the public network." },
+  PullRequestEvent: { kind: "CHANGE PROPOSED", tone: "violet", spoken: "A public change was proposed." },
+  IssuesEvent: { kind: "ISSUE MUTATION", tone: "amber", spoken: "A public issue changed state." },
+  CreateEvent: { kind: "REFERENCE CREATED", tone: "violet", spoken: "A public code reference was created." },
+  DeleteEvent: { kind: "REFERENCE DELETED", tone: "coral", spoken: "A public code reference was deleted." },
+  ReleaseEvent: { kind: "RELEASE PUBLISHED", tone: "amber", spoken: "A public software release appeared." },
+  ForkEvent: { kind: "CODE FORKED", tone: "cyan", spoken: "A public code tree branched." },
+  WatchEvent: { kind: "PROJECT STARRED", tone: "violet", spoken: "A public project received attention." },
 };
 
 const paletteOptions: Array<{ value: Palette; label: string; hint: string }> = [
@@ -152,9 +200,20 @@ function wikiName(value: unknown) {
 
 function shapeFor(kind: string): SignalShape {
   if (/PING|PULSE|KEEPALIVE/.test(kind)) return "ring";
-  if (/PAGE|CATEGORY|LOG|LINK/.test(kind)) return "packet";
-  if (/WITHDRAWN|NOTIFICATION|STATE/.test(kind)) return "spark";
+  if (/PAGE|CATEGORY|LOG|LINK|CODE|ITEM|TRANSACTION|RELEASE/.test(kind)) return "packet";
+  if (/WITHDRAWN|NOTIFICATION|STATE|DELETED|LOSS/.test(kind)) return "spark";
   return "beam";
+}
+
+function packetCode(event: Pick<SignalEvent, "source" | "kind" | "magnitude">) {
+  const source = event.source.slice(0, 3).padEnd(3, "0");
+  const kind = event.kind.replace(/[^A-Z0-9]/g, "_").slice(0, 12);
+  const magnitude = Math.round(event.magnitude).toString(16).toUpperCase().padStart(2, "0");
+  const binary = (event.kind.length * 17 + Math.round(event.magnitude))
+    .toString(2)
+    .slice(-8)
+    .padStart(8, "0");
+  return `${source}:${kind} 0x${magnitude} ${binary}`;
 }
 
 function voiceQualityScore(voice: SpeechSynthesisVoice) {
@@ -171,6 +230,8 @@ export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const particlesRef = useRef<Particle[]>([]);
   const shockwavesRef = useRef<Shockwave[]>([]);
+  const visualPacketsRef = useRef<VisualPacket[]>([]);
+  const visualizationRef = useRef<VisualizationMode>("flow");
   const synthRef = useRef<EtherlaneSynth | null>(null);
   const voiceSpaceRef = useRef<EtherlaneVoiceSpace | null>(null);
   const localVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
@@ -180,13 +241,23 @@ export default function Home() {
   const audioEnabledRef = useRef(false);
   const intensityRef = useRef(0.72);
   const voiceSpaceAmountRef = useRef(48);
-  const sourceEmitRef = useRef({ ris: 0, atlas: 0, wikimedia: 0 });
+  const sourceEmitRef = useRef({
+    ris: 0,
+    atlas: 0,
+    wikimedia: 0,
+    github: 0,
+    hackernews: 0,
+    blockchain: 0,
+  });
 
   const [events, setEvents] = useState<SignalEvent[]>([]);
   const [sourceHealth, setSourceHealth] = useState<SourceHealth>({
     ris: "connecting",
     atlas: "connecting",
     wikimedia: "connecting",
+    github: "connecting",
+    hackernews: "connecting",
+    blockchain: "connecting",
   });
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [musicEnabled, setMusicEnabled] = useState(false);
@@ -209,10 +280,15 @@ export default function Home() {
   const [selected, setSelected] = useState<SignalEvent | null>(null);
   const [showAbout, setShowAbout] = useState(false);
   const [showSynth, setShowSynth] = useState(false);
+  const [visualization, setVisualization] = useState<VisualizationMode>("flow");
 
   useEffect(() => {
     pausedRef.current = paused;
   }, [paused]);
+
+  useEffect(() => {
+    visualizationRef.current = visualization;
+  }, [visualization]);
 
   useEffect(() => {
     audioEnabledRef.current = audioEnabled;
@@ -232,10 +308,7 @@ export default function Home() {
   }, [synthSettings]);
 
   useEffect(() => {
-    const live =
-      Number(sourceHealth.ris === "live") +
-      Number(sourceHealth.atlas === "live") +
-      Number(sourceHealth.wikimedia === "live");
+    const live = sourceKeys.filter((source) => sourceHealth[source] === "live").length;
     synthRef.current?.setHealth(live);
   }, [sourceHealth]);
 
@@ -304,7 +377,8 @@ export default function Home() {
       setEvents((current) => [complete, ...current].slice(0, 18));
       setSignalCount((current) => current + 1);
 
-      const particleBurst = 2 + Math.round(event.magnitude / 22);
+      const compact = window.matchMedia("(max-width: 720px)").matches;
+      const particleBurst = compact ? 1 + Math.round(event.magnitude / 45) : 2 + Math.round(event.magnitude / 22);
       const shape = shapeFor(event.kind);
       for (let index = 0; index < particleBurst; index += 1) {
         particlesRef.current.push({
@@ -321,7 +395,7 @@ export default function Home() {
           phase: Math.random() * Math.PI * 2,
         });
       }
-      particlesRef.current = particlesRef.current.slice(-320);
+      particlesRef.current = particlesRef.current.slice(compact ? -76 : -320);
       shockwavesRef.current.push({
         lane: (Math.random() - 0.5) * 0.78,
         depth: 0.05 + Math.random() * 0.18,
@@ -330,7 +404,17 @@ export default function Home() {
         energy: event.magnitude,
         shape,
       });
-      shockwavesRef.current = shockwavesRef.current.slice(-28);
+      shockwavesRef.current = shockwavesRef.current.slice(compact ? -8 : -28);
+      visualPacketsRef.current.push({
+        tone: event.tone,
+        code: packetCode(complete),
+        progress: 0,
+        speed: compact ? 0.012 : 0.008 + event.magnitude / 22000,
+        lane: (Math.random() - 0.5) * 1.7,
+        from: Math.floor(Math.random() * (compact ? 18 : 34)),
+        to: Math.floor(Math.random() * (compact ? 18 : 34)),
+      });
+      visualPacketsRef.current = visualPacketsRef.current.slice(compact ? -18 : -42);
       synthRef.current?.push(complete);
       speakSignal(complete);
     },
@@ -347,8 +431,15 @@ export default function Home() {
     let width = 0;
     let height = 0;
     let devicePixelRatio = 1;
+    let compact = window.matchMedia("(max-width: 720px)").matches;
+    let lastFrame = 0;
+    const nodes = Array.from({ length: compact ? 18 : 34 }, (_, index) => ({
+      x: 0.08 + ((index * 47) % 83) / 100,
+      y: 0.12 + ((index * 31) % 74) / 100,
+      radius: 1.4 + (index % 4) * 0.45,
+    }));
 
-    for (let index = 0; index < 74; index += 1) {
+    for (let index = 0; index < (compact ? 24 : 74); index += 1) {
       particlesRef.current.push({
         lane: (Math.random() - 0.5) * 1.9,
         depth: Math.random(),
@@ -365,7 +456,8 @@ export default function Home() {
       const rect = canvas.getBoundingClientRect();
       width = Math.max(1, rect.width);
       height = Math.max(1, rect.height);
-      devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      compact = window.matchMedia("(max-width: 720px)").matches;
+      devicePixelRatio = compact ? 1 : Math.min(window.devicePixelRatio || 1, 1.75);
       canvas.width = width * devicePixelRatio;
       canvas.height = height * devicePixelRatio;
       context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
@@ -386,9 +478,97 @@ export default function Home() {
       };
     };
 
-    const draw = () => {
-      context.clearRect(0, 0, width, height);
+    const drawNeural = (time: number) => {
+      context.fillStyle = "rgba(3, 4, 9, 0.3)";
+      context.fillRect(0, 0, width, height);
+      context.save();
+      context.globalCompositeOperation = "screen";
+      for (let index = 0; index < nodes.length; index += 1) {
+        const node = nodes[index];
+        const next = nodes[(index + 5 + (index % 3)) % nodes.length];
+        context.strokeStyle = `rgba(87, 228, 255, ${compact ? 0.055 : 0.085})`;
+        context.lineWidth = 0.55;
+        context.beginPath();
+        context.moveTo(node.x * width, node.y * height);
+        context.lineTo(next.x * width, next.y * height);
+        context.stroke();
+      }
+      for (let index = 0; index < nodes.length; index += 1) {
+        const node = nodes[index];
+        const pulse = 0.35 + Math.sin(time * 1.4 + index) * 0.18;
+        context.fillStyle = index % 3 === 0
+          ? `rgba(151, 105, 255, ${pulse})`
+          : `rgba(87, 228, 255, ${pulse})`;
+        context.beginPath();
+        context.arc(node.x * width, node.y * height, node.radius + pulse * 2.4, 0, Math.PI * 2);
+        context.fill();
+      }
+      for (const packet of visualPacketsRef.current) {
+        if (!pausedRef.current) packet.progress += packet.speed;
+        const from = nodes[packet.from % nodes.length];
+        const to = nodes[packet.to % nodes.length];
+        const t = clamp(packet.progress, 0, 1);
+        const x = (from.x + (to.x - from.x) * t) * width;
+        const y = (from.y + (to.y - from.y) * t) * height;
+        const color = tones[packet.tone];
+        context.fillStyle = color.hex;
+        context.beginPath();
+        context.arc(x, y, compact ? 2.3 : 3.2, 0, Math.PI * 2);
+        context.fill();
+        if (!compact || visualPacketsRef.current.indexOf(packet) >= visualPacketsRef.current.length - 5) {
+          context.font = `${compact ? 7 : 9}px monospace`;
+          context.fillStyle = `rgba(${color.rgb}, .72)`;
+          context.fillText(packet.code, x + 8, y - 7);
+        }
+      }
+      visualPacketsRef.current = visualPacketsRef.current.filter((packet) => packet.progress <= 1.08);
+      context.restore();
+    };
+
+    const drawMatrix = (time: number) => {
+      context.fillStyle = "rgba(2, 4, 7, 0.24)";
+      context.fillRect(0, 0, width, height);
+      context.save();
+      context.font = `${compact ? 8 : 10}px monospace`;
+      context.textBaseline = "middle";
+      const columnCount = compact ? 9 : 18;
+      for (let column = 0; column < columnCount; column += 1) {
+        const x = ((column + 0.5) / columnCount) * width;
+        const y = ((time * (18 + (column % 5) * 4) + column * 67) % (height + 80)) - 40;
+        context.fillStyle = column % 3 === 0 ? "rgba(151,105,255,.2)" : "rgba(87,228,255,.16)";
+        context.fillText(`${(column * 73).toString(16).padStart(3, "0")} 01`, x, y);
+      }
+      for (const packet of visualPacketsRef.current) {
+        if (!pausedRef.current) packet.progress += packet.speed * 0.62;
+        const x = ((packet.from % columnCount) + 0.45) / columnCount * width;
+        const y = packet.progress * (height + 90) - 30;
+        const color = tones[packet.tone];
+        context.fillStyle = `rgba(${color.rgb}, .92)`;
+        context.fillText(packet.code, x, y);
+        context.fillStyle = `rgba(${color.rgb}, .24)`;
+        context.fillText("10110100 01101001", x, y - 15);
+        context.fillText("00101101 11000010", x, y - 30);
+      }
+      visualPacketsRef.current = visualPacketsRef.current.filter((packet) => packet.progress <= 1.08);
+      context.restore();
+    };
+
+    const draw = (frameTime = 0) => {
+      animationFrame = requestAnimationFrame(draw);
+      if (document.hidden) return;
+      const frameInterval = compact ? 1000 / 24 : 1000 / 60;
+      if (frameTime - lastFrame < frameInterval) return;
+      lastFrame = frameTime;
       const time = Date.now() * 0.001;
+      if (visualizationRef.current === "neural") {
+        drawNeural(time);
+        return;
+      }
+      if (visualizationRef.current === "matrix") {
+        drawMatrix(time);
+        return;
+      }
+      context.clearRect(0, 0, width, height);
       const horizonY = height * (0.405 + Math.sin(time * 0.17) * 0.006);
 
       const glow = context.createRadialGradient(
@@ -443,8 +623,9 @@ export default function Home() {
         context.stroke();
       }
 
-      for (let rung = 0; rung < 22; rung += 1) {
-        const phase = ((Date.now() * 0.00011 + rung / 22) % 1) ** 1.5;
+      const rungCount = compact ? 10 : 22;
+      for (let rung = 0; rung < rungCount; rung += 1) {
+        const phase = ((Date.now() * 0.00011 + rung / rungCount) % 1) ** 1.5;
         const left = project(-0.82, phase);
         const right = project(0.82, phase);
         context.strokeStyle = `rgba(119, 120, 255, ${phase * 0.15})`;
@@ -472,7 +653,7 @@ export default function Home() {
         const radius = particle.size * point.scale;
 
         context.shadowColor = color.hex;
-        context.shadowBlur = 8 + point.scale * 8;
+        context.shadowBlur = compact ? 0 : 8 + point.scale * 8;
         context.strokeStyle = `rgba(${color.rgb}, ${alpha * 0.48})`;
         context.lineWidth = Math.max(0.55, radius * 0.82);
         context.beginPath();
@@ -514,7 +695,7 @@ export default function Home() {
         context.strokeStyle = `rgba(${color.rgb}, ${clamp(wave.life * 0.64, 0, 0.64)})`;
         context.lineWidth = 0.6 + wave.life * 1.4;
         context.shadowColor = color.hex;
-        context.shadowBlur = 18 * wave.life;
+        context.shadowBlur = compact ? 0 : 18 * wave.life;
         context.beginPath();
         if (wave.shape === "packet") {
           context.rect(point.x - radius, point.y - radius * 0.42, radius * 2, radius * 0.84);
@@ -541,10 +722,9 @@ export default function Home() {
       context.fillStyle = vignette;
       context.fillRect(0, 0, width, height);
 
-      animationFrame = requestAnimationFrame(draw);
     };
 
-    draw();
+    animationFrame = requestAnimationFrame(draw);
     return () => {
       cancelAnimationFrame(animationFrame);
       observer.disconnect();
@@ -556,8 +736,14 @@ export default function Home() {
     let ris: WebSocket | null = null;
     let atlas: WebSocket | null = null;
     let wikimedia: EventSource | null = null;
+    let blockchain: WebSocket | null = null;
     let risRetry: number | undefined;
     let atlasRetry: number | undefined;
+    let blockchainRetry: number | undefined;
+    let githubTimer: number | undefined;
+    let hackerNewsTimer: number | undefined;
+    let githubEtag = "";
+    let lastGithubEvent = "";
 
     const connectRis = () => {
       if (disposed) return;
@@ -744,26 +930,165 @@ export default function Home() {
       };
     };
 
+    const pollGithub = async () => {
+      if (disposed) return;
+      setSourceHealth((current) => ({
+        ...current,
+        github: current.github === "live" ? "live" : "connecting",
+      }));
+      try {
+        const response = await fetch("https://api.github.com/events?per_page=20", {
+          headers: {
+            Accept: "application/vnd.github+json",
+            ...(githubEtag ? { "If-None-Match": githubEtag } : {}),
+          },
+        });
+        if (response.status === 304) {
+          setSourceHealth((current) => ({ ...current, github: "live" }));
+        } else if (response.ok) {
+          githubEtag = response.headers.get("etag") ?? githubEtag;
+          const data = (await response.json()) as Array<{
+            id?: string;
+            type?: string;
+            payload?: { size?: number; action?: string };
+          }>;
+          const event = data.find((candidate) => candidate.id && candidate.id !== lastGithubEvent);
+          if (event) {
+            lastGithubEvent = String(event.id);
+            const descriptor = githubKinds[String(event.type)] ?? {
+              kind: "PUBLIC CODE EVENT",
+              tone: "cyan" as SignalTone,
+              spoken: "A public code event crossed the network.",
+            };
+            const action = String(event.payload?.action ?? "").replaceAll("_", " ").toUpperCase();
+            const size = Number(event.payload?.size ?? 1);
+            sourceEmitRef.current.github = Date.now();
+            emitSignal({
+              source: "GITHUB",
+              kind: descriptor.kind,
+              label: "Open-source activity crossed the public event API",
+              detail: `${String(event.type ?? "Event").replace("Event", "").toUpperCase()}${action ? ` · ${action}` : ""}`,
+              tone: descriptor.tone,
+              magnitude: clamp(28 + Math.log2(size + 1) * 12, 28, 92),
+              spoken: descriptor.spoken,
+            });
+          }
+          setSourceHealth((current) => ({ ...current, github: "live" }));
+        } else {
+          setSourceHealth((current) => ({ ...current, github: "offline" }));
+        }
+      } catch {
+        setSourceHealth((current) => ({ ...current, github: "offline" }));
+      }
+      if (!disposed) githubTimer = window.setTimeout(pollGithub, 70_000);
+    };
+
+    const pollHackerNews = async () => {
+      if (disposed) return;
+      try {
+        const response = await fetch("https://hacker-news.firebaseio.com/v0/updates.json");
+        if (!response.ok) throw new Error("HN unavailable");
+        const data = (await response.json()) as { items?: unknown[]; profiles?: unknown[] };
+        const items = Array.isArray(data.items) ? data.items.length : 0;
+        const profiles = Array.isArray(data.profiles) ? data.profiles.length : 0;
+        const kind = items > 65 ? "THREAD BURST" : profiles > items ? "PROFILE SHIFT" : "ITEM MUTATION";
+        sourceEmitRef.current.hackernews = Date.now();
+        emitSignal({
+          source: "HACKERNEWS",
+          kind,
+          label: "A public technology conversation changed",
+          detail: `${items} item changes · ${profiles} profile changes`,
+          tone: items > 65 ? "amber" : profiles > items ? "violet" : "cyan",
+          magnitude: clamp(22 + items * 0.72 + profiles * 0.28, 24, 94),
+          spoken: `${kind.toLowerCase()}. ${items} public items changed.`,
+        });
+        setSourceHealth((current) => ({ ...current, hackernews: "live" }));
+      } catch {
+        setSourceHealth((current) => ({ ...current, hackernews: "offline" }));
+      }
+      if (!disposed) hackerNewsTimer = window.setTimeout(pollHackerNews, 24_000);
+    };
+
+    const connectBlockchain = () => {
+      if (disposed) return;
+      setSourceHealth((current) => ({ ...current, blockchain: "connecting" }));
+      blockchain = new WebSocket("wss://ws.blockchain.info/inv");
+      blockchain.onopen = () => {
+        if (disposed || !blockchain) return;
+        setSourceHealth((current) => ({ ...current, blockchain: "live" }));
+        blockchain.send(JSON.stringify({ op: "unconfirmed_sub" }));
+        blockchain.send(JSON.stringify({ op: "blocks_sub" }));
+      };
+      blockchain.onmessage = (message) => {
+        if (disposed) return;
+        try {
+          const data = JSON.parse(String(message.data));
+          const isBlock = data?.op === "block";
+          if (!isBlock && Date.now() - sourceEmitRef.current.blockchain < 900) return;
+          sourceEmitRef.current.blockchain = Date.now();
+          if (isBlock) {
+            const transactions = Number(data.x?.nTx ?? data.x?.txIndexes?.length ?? 0);
+            emitSignal({
+              source: "BLOCKCHAIN",
+              kind: "BLOCK PROPAGATED",
+              label: "A new public ledger block crossed the network",
+              detail: `${transactions} transactions · height ${data.x?.height ?? "unknown"}`,
+              tone: "amber",
+              magnitude: clamp(46 + Math.log10(transactions + 1) * 13, 46, 100),
+              spoken: `Block propagated. ${transactions} public transactions.`,
+            });
+            return;
+          }
+          if (data?.op !== "utx") return;
+          const size = Number(data.x?.size ?? 0);
+          const inputs = Array.isArray(data.x?.inputs) ? data.x.inputs.length : 0;
+          const outputs = Array.isArray(data.x?.out) ? data.x.out.length : 0;
+          emitSignal({
+            source: "BLOCKCHAIN",
+            kind: size > 1800 ? "LARGE TRANSACTION" : "TRANSACTION RELAYED",
+            label: "A public transaction propagated between nodes",
+            detail: `${size} bytes · ${inputs} inputs · ${outputs} outputs`,
+            tone: size > 1800 ? "coral" : "violet",
+            magnitude: clamp(24 + Math.log10(size + 1) * 17, 24, 92),
+            spoken: `Transaction relayed. ${size} bytes. ${inputs} inputs and ${outputs} outputs.`,
+          });
+        } catch {
+          // Public payload details are discarded immediately after normalization.
+        }
+      };
+      blockchain.onerror = () => blockchain?.close();
+      blockchain.onclose = () => {
+        if (disposed) return;
+        setSourceHealth((current) => ({ ...current, blockchain: "offline" }));
+        blockchainRetry = window.setTimeout(connectBlockchain, 7000);
+      };
+    };
+
     connectRis();
     connectAtlas();
     connectWikimedia();
+    void pollGithub();
+    void pollHackerNews();
+    connectBlockchain();
 
     return () => {
       disposed = true;
       window.clearTimeout(risRetry);
       window.clearTimeout(atlasRetry);
+      window.clearTimeout(blockchainRetry);
+      window.clearTimeout(githubTimer);
+      window.clearTimeout(hackerNewsTimer);
       ris?.close();
       atlas?.close();
       wikimedia?.close();
+      blockchain?.close();
     };
   }, [emitSignal]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
       const allOffline =
-        sourceHealth.ris !== "live" &&
-        sourceHealth.atlas !== "live" &&
-        sourceHealth.wikimedia !== "live";
+        sourceKeys.every((source) => sourceHealth[source] !== "live");
       if (!allOffline) return;
       const [kind, detail, tone, spoken] =
         syntheticSignals[Math.floor(Math.random() * syntheticSignals.length)];
@@ -816,11 +1141,7 @@ export default function Home() {
       synthRef.current = new EtherlaneSynth((frame) => setSynthFrame(frame));
       synthRef.current.setSettings(synthSettings);
       synthRef.current.setIntensity(intensityRef.current);
-      synthRef.current.setHealth(
-        Number(sourceHealth.ris === "live") +
-          Number(sourceHealth.atlas === "live") +
-          Number(sourceHealth.wikimedia === "live"),
-      );
+      synthRef.current.setHealth(sourceKeys.filter((source) => sourceHealth[source] === "live").length);
     }
     if (musicEnabled) {
       synthRef.current.stop();
@@ -836,13 +1157,9 @@ export default function Home() {
   };
 
   const connectionLabel = useMemo(() => {
-    const liveCount =
-      Number(sourceHealth.ris === "live") +
-      Number(sourceHealth.atlas === "live") +
-      Number(sourceHealth.wikimedia === "live");
-    if (liveCount === 3) return "3 LIVE SOURCES";
+    const liveCount = sourceKeys.filter((source) => sourceHealth[source] === "live").length;
     if (liveCount === 1) return "1 LIVE SOURCE";
-    if (liveCount === 2) return "2 LIVE SOURCES";
+    if (liveCount > 1) return `${liveCount} LIVE SOURCES`;
     return "SYNTHETIC FALLBACK";
   }, [sourceHealth]);
 
@@ -869,9 +1186,7 @@ export default function Home() {
         <div className="topbar-status" aria-live="polite">
           <span
             className={`live-dot ${
-              sourceHealth.ris === "live" ||
-              sourceHealth.atlas === "live" ||
-              sourceHealth.wikimedia === "live"
+              sourceKeys.some((source) => sourceHealth[source] === "live")
                 ? "is-live"
                 : ""
             }`}
@@ -897,9 +1212,28 @@ export default function Home() {
             <span>THE FLOW.</span>
           </h1>
           <p className="hero-intro">
-            Global routes shift. Measurements return. Public knowledge changes. The invisible
-            internet becomes light, motion, a mutating data voice and generative music.
+            Routes shift. Measurements return. Code, knowledge, conversations and public ledger
+            packets cross the network. The invisible internet becomes light, motion and sound.
           </p>
+        </div>
+
+        <div className="visualizer-switch" aria-label="Choose visualization">
+          <span>VISUAL FIELD</span>
+          <div>
+            {visualizations.map((option) => (
+              <button
+                className={visualization === option.value ? "is-active" : ""}
+                type="button"
+                key={option.value}
+                onClick={() => setVisualization(option.value)}
+                aria-pressed={visualization === option.value}
+                title={option.hint}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <small>{visualizations.find((option) => option.value === visualization)?.hint}</small>
         </div>
 
         <div className="horizon-lockup" aria-hidden="true">
@@ -1049,6 +1383,15 @@ export default function Home() {
           </span>
           <span className={`source-tag ${sourceHealth.wikimedia === "live" ? "is-live" : ""}`}>
             <i /> WIKIMEDIA
+          </span>
+          <span className={`source-tag ${sourceHealth.github === "live" ? "is-live" : ""}`}>
+            <i /> GITHUB
+          </span>
+          <span className={`source-tag ${sourceHealth.hackernews === "live" ? "is-live" : ""}`}>
+            <i /> HN
+          </span>
+          <span className={`source-tag ${sourceHealth.blockchain === "live" ? "is-live" : ""}`}>
+            <i /> BLOCKCHAIN
           </span>
         </div>
         <p>
@@ -1308,6 +1651,9 @@ export default function Home() {
               <div><i className="tone-violet" /><span>RIPE RIS</span><strong>BASS / ROUTE MOTIFS</strong></div>
               <div><i className="tone-cyan" /><span>RIPE ATLAS</span><strong>PULSE / HIGH VOICES</strong></div>
               <div><i className="tone-amber" /><span>WIKIMEDIA</span><strong>CHORDS / HARMONIC LIGHT</strong></div>
+              <div><i className="tone-cyan" /><span>GITHUB</span><strong>CODE / BRIGHT MOTIFS</strong></div>
+              <div><i className="tone-violet" /><span>HACKER NEWS</span><strong>THREAD / MID VOICES</strong></div>
+              <div><i className="tone-amber" /><span>BLOCKCHAIN</span><strong>LEDGER / LOW PULSES</strong></div>
               <p>Events are quantized before playback. Raw messages never enter the audio graph and nothing is recorded.</p>
             </div>
 
@@ -1333,17 +1679,18 @@ export default function Home() {
                 <span>01</span>
                 <h3>WHAT YOU SEE</h3>
                 <p>
-                  Public routing updates, global measurements and Wikimedia changes, translated
-                  into beams, pulses, packets, auroras and event-driven shockwaves.
+                  Six public signal families become a flowing highway, a transmitting neural
+                  network or matrix-like packet code. Mobile rendering automatically uses a
+                  lighter 24-frame profile.
                 </p>
               </section>
               <section>
                 <span>02</span>
                 <h3>WHAT YOU HEAR</h3>
                 <p>
-                  A polyphonic signal synth turns routing into bass motifs, latency into pulses and
-                  public changes into harmony. The best local voice speaks normalized strings with a
-                  synchronized convolution space tail, without sending text to a TTS service.
+                  An evolving ambient pad moves gradually through the selected scale while routing,
+                  latency, code, conversation and ledger events add spatial voices. Local speech
+                  adds normalized strings without sending text to a TTS service.
                 </p>
               </section>
               <section>

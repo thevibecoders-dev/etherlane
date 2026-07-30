@@ -54,19 +54,40 @@ test("padChordForHealth grows with the number of live feeds", () => {
   const one = padChordForHealth(1, "aeolian", "D");
   const two = padChordForHealth(2, "aeolian", "D");
   const three = padChordForHealth(3, "aeolian", "D");
+  const six = padChordForHealth(6, "aeolian", "D");
   assert.equal(off.length, 2);
   assert.equal(one.length, 2);
   assert.equal(two.length, 3);
   assert.equal(three.length, 5);
+  assert.equal(six.length, 6);
   // Root note is stable and shared by every voicing.
   assert.equal(one[0], off[0]);
   assert.equal(two[0], off[0]);
   assert.equal(three[0], off[0]);
 });
 
+test("pad harmony evolves while remaining inside the selected scale", () => {
+  const chords = Array.from({ length: 6 }, (_, step) =>
+    padChordForHealth(6, "dorian", "C", step),
+  );
+  assert.ok(new Set(chords.map((chord) => chord.join(","))).size >= 5);
+  const allowed = new Set(scaleIntervals.dorian.map((interval) => interval % 12));
+  for (const chord of chords) {
+    for (const note of chord) assert.ok(allowed.has(note % 12));
+  }
+});
+
 test("accentForSignal produces a musical, bounded voice per source", () => {
   const base = { kind: "PING RETURNED", magnitude: 60, tone: "cyan", timestamp: 0 };
-  for (const source of ["RIS", "ATLAS", "WIKIMEDIA", "SYNTHETIC"]) {
+  for (const source of [
+    "RIS",
+    "ATLAS",
+    "WIKIMEDIA",
+    "GITHUB",
+    "HACKERNEWS",
+    "BLOCKCHAIN",
+    "SYNTHETIC",
+  ]) {
     const voice = accentForSignal({ ...base, source }, "aeolian", "D");
     assert.ok(voice.velocity >= 0.16 && voice.velocity <= 0.7, `${source} velocity`);
     assert.ok(voice.pan >= -1 && voice.pan <= 1, `${source} pan`);

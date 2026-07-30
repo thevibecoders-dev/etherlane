@@ -37,12 +37,16 @@ test("server-renders the Etherlane experience and metadata", async () => {
   assert.match(html, /RIPE RIS/);
   assert.match(html, /RIPE ATLAS/);
   assert.match(html, /WIKIMEDIA/);
+  assert.match(html, /GITHUB/);
+  assert.match(html, /BLOCKCHAIN/);
+  assert.match(html, /NEURAL/);
+  assert.match(html, /MATRIX/);
   assert.match(html, /AMBIENT SYNTH/);
   assert.match(html, /SIGNAL SYNTH/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|VibeVeilig/i);
 });
 
-test("uses three public read-only feeds and never adds persistence", async () => {
+test("uses six public read-only feeds and never adds persistence", async () => {
   const [page, layout, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
@@ -52,6 +56,9 @@ test("uses three public read-only feeds and never adds persistence", async () =>
   assert.match(page, /wss:\/\/ris-live\.ripe\.net\/v1\/ws/);
   assert.match(page, /wss:\/\/atlas-stream\.ripe\.net\/stream/);
   assert.match(page, /https:\/\/stream\.wikimedia\.org\/v2\/stream\/recentchange/);
+  assert.match(page, /https:\/\/api\.github\.com\/events\?per_page=20/);
+  assert.match(page, /https:\/\/hacker-news\.firebaseio\.com\/v0\/updates\.json/);
+  assert.match(page, /wss:\/\/ws\.blockchain\.info\/inv/);
   assert.match(page, /includeRaw:\s*false/);
   assert.match(page, /slice\(0,\s*18\)/);
   assert.match(page, /SpeechSynthesisUtterance/);
@@ -82,13 +89,24 @@ test("expands both routing vocabulary and signal-driven visual forms", async () 
     "HIGH LATENCY",
     "PAGE CREATED",
     "CATEGORY SHIFT",
+    "CODE PUSHED",
+    "THREAD BURST",
+    "BLOCK PROPAGATED",
+    "TRANSACTION RELAYED",
   ]) {
     assert.match(page, new RegExp(kind));
   }
 
   assert.match(page, /type SignalShape = "beam" \| "ring" \| "packet" \| "spark"/);
   assert.match(page, /shockwavesRef/);
+  assert.match(page, /type VisualizationMode = "flow" \| "neural" \| "matrix"/);
+  assert.match(page, /drawNeural/);
+  assert.match(page, /drawMatrix/);
+  assert.match(page, /1000 \/ 24/);
+  assert.match(page, /devicePixelRatio = compact \? 1/);
   assert.match(css, /@keyframes transmit/);
+  assert.match(css, /\.visualizer-switch/);
+  assert.match(css, /\.signal-canvas\s*\{[\s\S]*position:\s*fixed/);
 });
 
 test("ships an immersive ambient synth without recording or persistence", async () => {
@@ -116,6 +134,15 @@ test("ships an immersive ambient synth without recording or persistence", async 
   assert.match(engine, /makeHallImpulse/);
   assert.match(engine, /now - this\.lastAccentAt < 70/); // precedence-effect spacing
   assert.match(engine, /setHealth/);
+  assert.match(engine, /scheduleEvolution/);
+  assert.match(engine, /timbreChanged/);
+  assert.match(engine, /padClearTimer/);
+  assert.match(engine, /feedbackL/);
+  assert.match(engine, /feedbackR/);
+  assert.match(engine, /breathBuffer/);
+  assert.match(engine, /palette === "choir"/);
+  assert.match(engine, /0\.12 \+ \(next\.delay \/ 100\) \* 0\.34/);
+  assert.doesNotMatch(engine, /feedback\.connect\(delayL\)|feedback\.connect\(delayR\)/);
   assert.match(math, /quantizeToScale/);
   assert.match(math, /padChordForHealth/);
   assert.doesNotMatch(engine, /MediaRecorder|localStorage|sessionStorage|indexedDB|document\.cookie/i);
