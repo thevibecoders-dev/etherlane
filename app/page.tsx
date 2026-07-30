@@ -2,15 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  binauralPresets,
   defaultSynthSettings,
+  EtherlaneBinaural,
   EtherlaneSynth,
   EtherlaneVoiceSpace,
+  type BinauralMode,
   type KeyName,
   type Palette,
   type ScaleName,
   type SynthFrame,
   type SynthSettings,
 } from "./synth-engine";
+import { EtherlaneNeuralVoice } from "./neural-voice";
 
 type SignalSource =
   | "RIS"
@@ -25,6 +29,9 @@ type SignalTone = "violet" | "cyan" | "amber" | "coral";
 type SignalShape = "beam" | "ring" | "packet" | "spark";
 type VisualizationMode = "flow" | "neural" | "matrix";
 type HealthState = "connecting" | "live" | "offline";
+type VoiceEngine = "piper" | "device";
+type VoiceDensity = "dream" | "full";
+type SynthPatch = "ether-bloom" | "glass-orbit" | "choir-void" | "deep-rest" | "signal-storm";
 
 type SignalEvent = {
   id: string;
@@ -188,6 +195,44 @@ const keyOptions: Array<{ value: KeyName; label: string }> = [
   { value: "A", label: "A" },
 ];
 
+const synthPatches: Array<{
+  value: SynthPatch;
+  label: string;
+  hint: string;
+  settings: SynthSettings;
+}> = [
+  {
+    value: "ether-bloom",
+    label: "ETHER BLOOM",
+    hint: "Warm, wide and slowly opening",
+    settings: { ...defaultSynthSettings, palette: "strings", key: "D", scale: "aeolian", space: 72, delay: 32, drift: 38 },
+  },
+  {
+    value: "glass-orbit",
+    label: "GLASS ORBIT",
+    hint: "Bright suspended constellations",
+    settings: { ...defaultSynthSettings, palette: "glass", key: "A", scale: "lydian", warmth: 68, shimmer: 76, space: 78, delay: 46 },
+  },
+  {
+    value: "choir-void",
+    label: "CHOIR VOID",
+    hint: "Breathy voices in a deep hall",
+    settings: { ...defaultSynthSettings, palette: "choir", key: "D", scale: "dorian", warmth: 46, shimmer: 58, space: 88, delay: 38 },
+  },
+  {
+    value: "deep-rest",
+    label: "DEEP REST",
+    hint: "Dark, slow and meditation friendly",
+    settings: { ...defaultSynthSettings, palette: "choir", key: "C", scale: "major-pentatonic", warmth: 32, shimmer: 28, drift: 16, space: 92, delay: 24, master: 58 },
+  },
+  {
+    value: "signal-storm",
+    label: "SIGNAL STORM",
+    hint: "Restless routes and fractured light",
+    settings: { ...defaultSynthSettings, palette: "strings", key: "E", scale: "minor-pentatonic", warmth: 74, shimmer: 72, drift: 82, space: 66, delay: 62, master: 68 },
+  },
+];
+
 function formatTime(timestamp: number) {
   return new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
@@ -250,6 +295,35 @@ function voiceQualityScore(voice: SpeechSynthesisVoice) {
   return score;
 }
 
+function dreamPhraseFor(event: SignalEvent) {
+  const explicit: Array<[RegExp, string]> = [
+    [/OUTAGE|NOTIFICATION/, "signal fracture"],
+    [/WITHDRAWN|DELETED|REMOVED/, "path fading"],
+    [/ROOT/, "deep roots shifting"],
+    [/PING|LATENCY/, "distant echo"],
+    [/ROUTE|PATH|PEER|SESSION/, "new paths"],
+    [/PAGE|KNOWLEDGE/, "knowledge blooming"],
+    [/CODE|RELEASE|REFERENCE/, "code awakening"],
+    [/THREAD|CONVERSATION|ITEM/, "voices gathering"],
+    [/BLOCK|TRANSACTION|LEDGER/, "the ledger turns"],
+    [/NOMINAL|OPERATIONAL/, "all is flowing"],
+  ];
+  const matched = explicit.find(([pattern]) => pattern.test(event.kind));
+  if (matched) return matched[1];
+  const pools: Record<SignalSource, string[]> = {
+    RIS: ["routes breathing", "a path opens", "distant crossings"],
+    ATLAS: ["soft return", "across the distance", "echo received"],
+    WIKIMEDIA: ["memory growing", "words become light", "knowledge drifting"],
+    GITHUB: ["code in motion", "a branch unfolds", "new shapes"],
+    HACKERNEWS: ["voices in the wire", "ideas gathering", "the network wonders"],
+    BLOCKCHAIN: ["the ledger turns", "another block", "time recorded"],
+    INFRASTRUCTURE: ["the core is listening", "deep network pulse", "roots holding"],
+    SYNTHETIC: ["between signals", "soft static", "the ether dreams"],
+  };
+  const options = pools[event.source];
+  return options[(event.kind.length + Math.round(event.magnitude)) % options.length];
+}
+
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const particlesRef = useRef<Particle[]>([]);
@@ -259,12 +333,17 @@ export default function Home() {
   const infrastructureRiskRef = useRef(0);
   const infrastructureSignatureRef = useRef("");
   const synthRef = useRef<EtherlaneSynth | null>(null);
+  const binauralRef = useRef<EtherlaneBinaural | null>(null);
   const voiceSpaceRef = useRef<EtherlaneVoiceSpace | null>(null);
+  const neuralVoiceRef = useRef<EtherlaneNeuralVoice | null>(null);
   const localVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const selectedVoiceRef = useRef("");
   const lastVoiceRef = useRef(0);
   const pausedRef = useRef(false);
   const audioEnabledRef = useRef(false);
+  const voiceEngineRef = useRef<VoiceEngine>("piper");
+  const voiceDensityRef = useRef<VoiceDensity>("dream");
+  const voiceBusyRef = useRef(false);
   const intensityRef = useRef(0.72);
   const voiceSpaceAmountRef = useRef(48);
   const sourceEmitRef = useRef({
@@ -312,6 +391,15 @@ export default function Home() {
   const [localVoices, setLocalVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [selectedVoiceUri, setSelectedVoiceUri] = useState("");
   const [voiceSpace, setVoiceSpace] = useState(48);
+  const [voiceEngine, setVoiceEngine] = useState<VoiceEngine>("piper");
+  const [voiceDensity, setVoiceDensity] = useState<VoiceDensity>("dream");
+  const [neuralVoiceStatus, setNeuralVoiceStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [neuralVoiceProgress, setNeuralVoiceProgress] = useState(0);
+  const [binauralEnabled, setBinauralEnabled] = useState(false);
+  const [binauralMode, setBinauralMode] = useState<BinauralMode>("theta");
+  const [selectedPatch, setSelectedPatch] = useState<SynthPatch | "custom">("ether-bloom");
   const [spokenPhrase, setSpokenPhrase] = useState("VOICE CHANNEL STANDBY");
   const [synthSettings, setSynthSettings] = useState<SynthSettings>(defaultSynthSettings);
   const [synthFrame, setSynthFrame] = useState<SynthFrame>({
@@ -342,6 +430,14 @@ export default function Home() {
   }, [audioEnabled]);
 
   useEffect(() => {
+    voiceEngineRef.current = voiceEngine;
+  }, [voiceEngine]);
+
+  useEffect(() => {
+    voiceDensityRef.current = voiceDensity;
+  }, [voiceDensity]);
+
+  useEffect(() => {
     intensityRef.current = intensity / 100;
     synthRef.current?.setIntensity(intensity / 100);
   }, [intensity]);
@@ -362,6 +458,7 @@ export default function Home() {
   useEffect(
     () => () => {
       synthRef.current?.dispose();
+      binauralRef.current?.dispose();
       voiceSpaceRef.current?.dispose();
     },
     [],
@@ -393,24 +490,72 @@ export default function Home() {
     };
   }, []);
 
-  const speakSignal = useCallback((event: SignalEvent) => {
-    if (!audioEnabledRef.current || !localVoiceRef.current || !window.speechSynthesis) return;
-    const nowMs = performance.now();
-    const cadence = 2300 - intensityRef.current * 900;
-    if (nowMs - lastVoiceRef.current < cadence || window.speechSynthesis.speaking) return;
-    lastVoiceRef.current = nowMs;
+  const prepareNeuralVoice = useCallback(async () => {
+    if (!neuralVoiceRef.current) neuralVoiceRef.current = new EtherlaneNeuralVoice();
+    setNeuralVoiceStatus("loading");
+    await neuralVoiceRef.current.prepare(({ loaded, total }) => {
+      if (total > 0) setNeuralVoiceProgress(Math.round((loaded / total) * 100));
+    });
+    setNeuralVoiceProgress(100);
+    setNeuralVoiceStatus("ready");
+  }, []);
 
-    const utterance = new SpeechSynthesisUtterance(event.spoken);
+  const speakSignal = useCallback(async (event: SignalEvent) => {
+    if (!audioEnabledRef.current || voiceBusyRef.current) return;
+    if (
+      voiceEngineRef.current === "device" &&
+      (!localVoiceRef.current || !window.speechSynthesis)
+    ) {
+      return;
+    }
+    const nowMs = performance.now();
+    const cadence =
+      voiceDensityRef.current === "dream"
+        ? 5200 - intensityRef.current * 900
+        : 2300 - intensityRef.current * 900;
+    if (
+      nowMs - lastVoiceRef.current < cadence ||
+      (voiceEngineRef.current === "device" && window.speechSynthesis.speaking)
+    ) {
+      return;
+    }
+    lastVoiceRef.current = nowMs;
+    const phrase = voiceDensityRef.current === "dream" ? dreamPhraseFor(event) : event.spoken;
+    setSpokenPhrase(phrase.toUpperCase());
+
+    if (voiceEngineRef.current === "piper") {
+      voiceBusyRef.current = true;
+      try {
+        await prepareNeuralVoice();
+        const blob = await neuralVoiceRef.current!.synthesize(phrase, ({ loaded, total }) => {
+          if (total > 0) setNeuralVoiceProgress(Math.round((loaded / total) * 100));
+        });
+        if (!audioEnabledRef.current) return;
+        if (!voiceSpaceRef.current) voiceSpaceRef.current = new EtherlaneVoiceSpace();
+        await voiceSpaceRef.current.playBlob(
+          blob,
+          event.tone,
+          event.magnitude,
+          voiceSpaceAmountRef.current,
+        );
+      } catch {
+        setNeuralVoiceStatus("error");
+      } finally {
+        voiceBusyRef.current = false;
+      }
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(phrase);
     utterance.voice = localVoiceRef.current;
-    utterance.lang = localVoiceRef.current.lang;
+    utterance.lang = localVoiceRef.current?.lang ?? "en-US";
     utterance.rate = 0.82 + clamp(event.magnitude / 100, 0, 1) * 0.26;
     utterance.pitch =
       event.tone === "coral" ? 0.86 : event.tone === "cyan" ? 1.06 : event.tone === "amber" ? 0.94 : 1;
     utterance.volume = 0.42 + intensityRef.current * 0.48;
-    setSpokenPhrase(event.spoken.toUpperCase());
-    voiceSpaceRef.current?.play(event.tone, event.magnitude, voiceSpaceAmountRef.current);
+    voiceSpaceRef.current?.playTexture(event.tone, event.magnitude, voiceSpaceAmountRef.current);
     window.speechSynthesis.speak(utterance);
-  }, []);
+  }, [prepareNeuralVoice]);
 
   const emitSignal = useCallback(
     (event: Omit<SignalEvent, "id" | "timestamp">) => {
@@ -475,7 +620,7 @@ export default function Home() {
       }
       visualPacketsRef.current = visualPacketsRef.current.slice(compact ? -18 : -42);
       synthRef.current?.push(complete);
-      speakSignal(complete);
+      void speakSignal(complete);
     },
     [speakSignal],
   );
@@ -1305,15 +1450,46 @@ export default function Home() {
     }
     if (!voiceSpaceRef.current) voiceSpaceRef.current = new EtherlaneVoiceSpace();
     await voiceSpaceRef.current.prepare();
+    if (voiceEngineRef.current === "piper") {
+      voiceBusyRef.current = true;
+      try {
+        await prepareNeuralVoice();
+        const blob = await neuralVoiceRef.current!.synthesize("Etherlane. Data voice online.");
+        if (!audioEnabledRef.current) return;
+        await voiceSpaceRef.current.playBlob(blob, "violet", 58, voiceSpaceAmountRef.current);
+        setSpokenPhrase("NEURAL VOICE ONLINE");
+      } catch {
+        setNeuralVoiceStatus("error");
+        audioEnabledRef.current = false;
+        setAudioEnabled(false);
+        setSpokenPhrase("NEURAL VOICE UNAVAILABLE");
+      } finally {
+        voiceBusyRef.current = false;
+      }
+      return;
+    }
     if (localVoiceRef.current) {
       const utterance = new SpeechSynthesisUtterance("Etherlane. Data voice online.");
       utterance.voice = localVoiceRef.current;
       utterance.lang = localVoiceRef.current.lang;
       utterance.rate = 0.88;
       utterance.volume = 0.62;
-      voiceSpaceRef.current.play("violet", 58, voiceSpaceAmountRef.current);
+      voiceSpaceRef.current.playTexture("violet", 58, voiceSpaceAmountRef.current);
       window.speechSynthesis.speak(utterance);
       setSpokenPhrase("DATA VOICE ONLINE");
+    }
+  };
+
+  const chooseVoiceEngine = async (engine: VoiceEngine) => {
+    voiceEngineRef.current = engine;
+    setVoiceEngine(engine);
+    window.speechSynthesis?.cancel();
+    if (engine === "piper" && audioEnabledRef.current) {
+      try {
+        await prepareNeuralVoice();
+      } catch {
+        setNeuralVoiceStatus("error");
+      }
     }
   };
 
@@ -1342,7 +1518,29 @@ export default function Home() {
   };
 
   const updateSynth = <Key extends keyof SynthSettings>(key: Key, value: SynthSettings[Key]) => {
+    setSelectedPatch("custom");
     setSynthSettings((current) => ({ ...current, [key]: value }));
+  };
+
+  const applyPatch = (patch: (typeof synthPatches)[number]) => {
+    setSelectedPatch(patch.value);
+    setSynthSettings({ ...patch.settings });
+  };
+
+  const chooseBinauralMode = (mode: BinauralMode) => {
+    setBinauralMode(mode);
+    binauralRef.current?.setMode(mode);
+  };
+
+  const toggleBinaural = async () => {
+    if (binauralEnabled) {
+      binauralRef.current?.stop();
+      setBinauralEnabled(false);
+      return;
+    }
+    if (!binauralRef.current) binauralRef.current = new EtherlaneBinaural();
+    const started = await binauralRef.current.start(binauralMode);
+    setBinauralEnabled(started);
   };
 
   const connectionLabel = useMemo(() => {
@@ -1354,7 +1552,9 @@ export default function Home() {
 
   const latest = events[0];
   const activeVoiceName =
-    localVoices.find((voice) => voice.voiceURI === selectedVoiceUri)?.name ?? "BEST LOCAL VOICE";
+    voiceEngine === "piper"
+      ? "PIPER HFC NEURAL"
+      : localVoices.find((voice) => voice.voiceURI === selectedVoiceUri)?.name ?? "BEST LOCAL VOICE";
 
   return (
     <main
@@ -1569,7 +1769,7 @@ export default function Home() {
           className={`secondary-control voice-control ${audioEnabled ? "is-active" : ""}`}
           onClick={toggleAudio}
           aria-pressed={audioEnabled}
-          disabled={!voiceAvailable}
+          disabled={voiceEngine === "device" && !voiceAvailable}
         >
           <span className="sound-bars" aria-hidden="true">
             <i />
@@ -1580,7 +1780,17 @@ export default function Home() {
           <span>
             <small>VOICE</small>
             <strong>
-              {!voiceAvailable ? "UNAVAILABLE" : audioEnabled ? "SPEAKING" : "OFF"}
+              {voiceEngine === "piper" && neuralVoiceStatus === "loading"
+                ? `LOADING ${neuralVoiceProgress}%`
+                : voiceEngine === "piper" && neuralVoiceStatus === "idle" && !audioEnabled
+                  ? "NEURAL · 70MB"
+                : voiceEngine === "device" && !voiceAvailable
+                  ? "UNAVAILABLE"
+                  : audioEnabled
+                    ? voiceEngine === "piper"
+                      ? "NEURAL"
+                      : "SPEAKING"
+                    : "OFF"}
             </strong>
           </span>
         </button>
@@ -1700,6 +1910,31 @@ export default function Home() {
             </div>
 
             <div className="synth-modules">
+              <section className="synth-module patch-module">
+                <div className="module-title">
+                  <span>00</span>
+                  <div>
+                    <strong>PATCH BANK</strong>
+                    <small>ATMOSPHERE PRESETS</small>
+                  </div>
+                </div>
+                <div className="patch-grid" aria-label="Synthesizer patches">
+                  {synthPatches.map((patch) => (
+                    <button
+                      className={selectedPatch === patch.value ? "is-selected" : ""}
+                      type="button"
+                      key={patch.value}
+                      onClick={() => applyPatch(patch)}
+                      aria-pressed={selectedPatch === patch.value}
+                    >
+                      <strong>{patch.label}</strong>
+                      <small>{patch.hint}</small>
+                    </button>
+                  ))}
+                </div>
+                {selectedPatch === "custom" && <p className="custom-patch">CUSTOM PATCH / LIVE EDIT</p>}
+              </section>
+
               <section className="synth-module oscillator-module">
                 <div className="module-title">
                   <span>01</span>
@@ -1856,38 +2091,136 @@ export default function Home() {
                   <span>06</span>
                   <div>
                     <strong>VOICE PROCESSOR</strong>
-                    <small>LOCAL TTS / SPACE TAIL</small>
+                    <small>NEURAL TTS / TRUE SPACE</small>
                   </div>
                 </div>
-                <label className="voice-selector">
-                  <span>VOICE <output>{voiceAvailable ? "LOCAL" : "UNAVAILABLE"}</output></span>
-                  <select
-                    value={selectedVoiceUri}
-                    onChange={(event) => chooseVoice(event.target.value)}
-                    disabled={localVoices.length === 0}
+                <div className="scale-choices voice-engine-choices" aria-label="Voice engine">
+                  <button
+                    className={voiceEngine === "piper" ? "is-selected" : ""}
+                    type="button"
+                    onClick={() => void chooseVoiceEngine("piper")}
+                    aria-pressed={voiceEngine === "piper"}
                   >
-                    {localVoices.length === 0 ? (
-                      <option value="">NO LOCAL VOICE FOUND</option>
-                    ) : (
-                      localVoices.map((voice) => (
-                        <option value={voice.voiceURI} key={voice.voiceURI}>
-                          {voice.name} · {voice.lang}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </label>
+                    PIPER NEURAL
+                  </button>
+                  <button
+                    className={voiceEngine === "device" ? "is-selected" : ""}
+                    type="button"
+                    onClick={() => void chooseVoiceEngine("device")}
+                    aria-pressed={voiceEngine === "device"}
+                  >
+                    DEVICE VOICE
+                  </button>
+                </div>
+                <div className="scale-choices voice-density-choices" aria-label="Spoken word density">
+                  <button
+                    className={voiceDensity === "dream" ? "is-selected" : ""}
+                    type="button"
+                    onClick={() => setVoiceDensity("dream")}
+                    aria-pressed={voiceDensity === "dream"}
+                  >
+                    DREAM PHRASES
+                  </button>
+                  <button
+                    className={voiceDensity === "full" ? "is-selected" : ""}
+                    type="button"
+                    onClick={() => setVoiceDensity("full")}
+                    aria-pressed={voiceDensity === "full"}
+                  >
+                    FULL SIGNALS
+                  </button>
+                </div>
+                {voiceEngine === "device" && (
+                  <label className="voice-selector">
+                    <span>VOICE <output>{voiceAvailable ? "LOCAL" : "UNAVAILABLE"}</output></span>
+                    <select
+                      value={selectedVoiceUri}
+                      onChange={(event) => chooseVoice(event.target.value)}
+                      disabled={localVoices.length === 0}
+                    >
+                      {localVoices.length === 0 ? (
+                        <option value="">NO LOCAL VOICE FOUND</option>
+                      ) : (
+                        localVoices.map((voice) => (
+                          <option value={voice.voiceURI} key={voice.voiceURI}>
+                            {voice.name} · {voice.lang}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </label>
+                )}
                 <label className="synth-slider">
-                  <span>VOICE SPACE <output>{voiceSpace}%</output></span>
+                  <span>VOICE REVERB <output>{voiceSpace}%</output></span>
                   <input
                     type="range"
                     min="0"
-                    max="82"
+                    max="100"
                     value={voiceSpace}
                     onChange={(event) => setVoiceSpace(Number(event.target.value))}
                   />
                 </label>
-                <p>{activeVoiceName}. Processed locally; speech text never leaves this device.</p>
+                <p>
+                  {activeVoiceName}. Neural audio runs through a real 3.8 s convolution hall
+                  with separate 310 ms left and 470 ms right delays.
+                  {voiceEngine === "piper" && neuralVoiceStatus === "idle"
+                    ? " First use downloads an approximately 70 MB voice model to this device."
+                    : ""}
+                  {voiceEngine === "piper" && neuralVoiceStatus === "loading"
+                    ? ` Loading local model: ${neuralVoiceProgress}%.`
+                    : ""}
+                  {voiceEngine === "piper" && neuralVoiceStatus === "error"
+                    ? " Neural voice could not load; try the device voice."
+                    : ""}
+                </p>
+              </section>
+
+              <section className="synth-module binaural-module">
+                <div className="module-title">
+                  <span>07</span>
+                  <div>
+                    <strong>BINAURAL MEDITATION</strong>
+                    <small>TRUE STEREO CARRIER PAIR</small>
+                  </div>
+                </div>
+                <div className="binaural-intro">
+                  <span aria-hidden="true">L</span>
+                  <i aria-hidden="true" />
+                  <strong>{binauralPresets[binauralMode].beatHz} HZ</strong>
+                  <i aria-hidden="true" />
+                  <span aria-hidden="true">R</span>
+                </div>
+                <div className="binaural-grid" aria-label="Binaural listening mode">
+                  {(Object.entries(binauralPresets) as Array<
+                    [BinauralMode, (typeof binauralPresets)[BinauralMode]]
+                  >).map(([mode, preset]) => (
+                    <button
+                      className={binauralMode === mode ? "is-selected" : ""}
+                      type="button"
+                      key={mode}
+                      onClick={() => chooseBinauralMode(mode)}
+                      aria-pressed={binauralMode === mode}
+                    >
+                      <strong>{preset.label}</strong>
+                      <small>{preset.beatHz} Hz · {preset.description}</small>
+                    </button>
+                  ))}
+                </div>
+                <div className="headphone-advice">
+                  <strong>USE HEADPHONES</strong>
+                  <span>
+                    Required for left/right separation. Keep volume comfortable; stop if you feel
+                    discomfort. This is an ambient meditation aid, not medical treatment.
+                  </span>
+                </div>
+                <button
+                  className={`binaural-power ${binauralEnabled ? "is-active" : ""}`}
+                  type="button"
+                  onClick={() => void toggleBinaural()}
+                  aria-pressed={binauralEnabled}
+                >
+                  {binauralEnabled ? "STOP BINAURAL FIELD" : "START BINAURAL FIELD"}
+                </button>
               </section>
             </div>
 
@@ -1935,17 +2268,19 @@ export default function Home() {
                 <p>
                   An evolving ambient pad moves gradually through the selected scale while routing,
                   latency, code, conversation, ledger and infrastructure events add spatial
-                  voices. Major disruption signals descend into darker distress tones. Local
-                  speech adds normalized strings without sending text to a TTS service.
+                  voices. Piper neural speech can use full signal descriptions or sparse dream
+                  phrases, passing through true convolution reverb. Optional binaural modes place
+                  a different carrier in each ear for a headphone meditation field.
                 </p>
               </section>
               <section>
                 <span>03</span>
                 <h3>WHAT WE KEEP</h3>
                 <p>
-                  Nothing. Signals exist briefly in memory, become light and sound, then
-                  disappear. Infrastructure checks are normalized in transit and are not stored.
-                  No database, no payload capture, no private traffic.
+                  Signal data follows a zero-retention policy: it exists briefly in memory,
+                  becomes light and sound, then disappears. The optional reusable Piper voice model may
+                  remain on this device, but spoken text and signal content do not. No database,
+                  payload capture or private traffic.
                 </p>
               </section>
             </div>

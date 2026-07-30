@@ -14,6 +14,7 @@
 
 import {
   accentForSignal,
+  binauralPair,
   clamp,
   ensembleDetune,
   midiToFrequency,
@@ -39,6 +40,37 @@ export type ScaleName =
   | "major-pentatonic";
 export type KeyName = "C" | "D" | "E" | "F" | "G" | "A";
 export type Palette = "strings" | "glass" | "choir";
+export type BinauralMode = "delta" | "theta" | "alpha" | "focus";
+
+export const binauralPresets: Record<
+  BinauralMode,
+  { label: string; beatHz: number; carrierHz: number; description: string }
+> = {
+  delta: {
+    label: "DELTA REST",
+    beatHz: 2.5,
+    carrierHz: 174,
+    description: "Very slow pulse for settling and stillness",
+  },
+  theta: {
+    label: "THETA DRIFT",
+    beatHz: 6,
+    carrierHz: 192,
+    description: "Slow pulse for an open meditation atmosphere",
+  },
+  alpha: {
+    label: "ALPHA CALM",
+    beatHz: 10,
+    carrierHz: 210,
+    description: "Gentle pulse for relaxed wakefulness",
+  },
+  focus: {
+    label: "SOFT FOCUS",
+    beatHz: 14,
+    carrierHz: 228,
+    description: "Quicker pulse for quiet concentration",
+  },
+};
 
 export type MusicSignal = {
   source: SynthSource;
@@ -124,13 +156,30 @@ export class EtherlaneVoiceSpace {
   private context: AudioContext | null = null;
   private input: GainNode | null = null;
   private wet: GainNode | null = null;
+  private delaySend: GainNode | null = null;
 
   async prepare() {
     this.ensureGraph();
     await this.context?.resume();
   }
 
-  play(tone: SynthTone, energy: number, amount: number) {
+  async playBlob(blob: Blob, tone: SynthTone, energy: number, amount: number) {
+    this.ensureGraph();
+    if (!this.context || !this.input) return;
+    await this.context.resume();
+    const audio = await this.context.decodeAudioData(await blob.arrayBuffer());
+    const source = this.context.createBufferSource();
+    const toneFilter = this.context.createBiquadFilter();
+    toneFilter.type = "highshelf";
+    toneFilter.frequency.value = 4200;
+    toneFilter.gain.value = tone === "coral" ? -4 : tone === "cyan" ? 1.2 : -1.2;
+    source.buffer = audio;
+    source.connect(toneFilter).connect(this.input);
+    this.setSpace(amount, energy);
+    source.start();
+  }
+
+  playTexture(tone: SynthTone, energy: number, amount: number) {
     if (!this.context || !this.input || !this.wet || amount <= 0) return;
     const now = this.context.currentTime;
     const duration = 0.52 + (amount / 100) * 0.9;
@@ -167,7 +216,7 @@ export class EtherlaneVoiceSpace {
     envelope.gain.setValueAtTime(0.0001, now);
     envelope.gain.exponentialRampToValueAtTime(peak, now + 0.045);
     envelope.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    this.wet.gain.setTargetAtTime(0.34 + amount / 165, now, 0.04);
+    this.setSpace(amount, energy);
 
     source.connect(formant).connect(envelope).connect(this.input);
     shimmer.connect(shimmerGain).connect(this.input);
@@ -190,21 +239,187 @@ export class EtherlaneVoiceSpace {
 
     const context = new AudioContextClass();
     const input = context.createGain();
+    const dry = context.createGain();
     const preDelay = context.createDelay(0.4);
     const convolver = context.createConvolver();
     const wet = context.createGain();
     const highpass = context.createBiquadFilter();
+    const lowpass = context.createBiquadFilter();
+    const delaySend = context.createGain();
+    const delayL = context.createDelay(0.8);
+    const delayR = context.createDelay(0.8);
+    const feedbackL = context.createGain();
+    const feedbackR = context.createGain();
+    const panL = context.createStereoPanner();
+    const panR = context.createStereoPanner();
+    const output = context.createGain();
+    const limiter = context.createDynamicsCompressor();
 
-    preDelay.delayTime.value = 0.038;
-    convolver.buffer = makeHallImpulse(context, 2.1, 3.1);
-    wet.gain.value = 0.54;
+    dry.gain.value = 0.84;
+    preDelay.delayTime.value = 0.044;
+    convolver.buffer = makeHallImpulse(context, 3.8, 2.45);
+    wet.gain.value = 0.5;
     highpass.type = "highpass";
-    highpass.frequency.value = 190;
+    highpass.frequency.value = 170;
+    lowpass.type = "lowpass";
+    lowpass.frequency.value = 6200;
 
-    input.connect(preDelay).connect(convolver).connect(highpass).connect(wet).connect(context.destination);
+    // Different left/right times create a wide, non-metallic voice echo.
+    delayL.delayTime.value = 0.31;
+    delayR.delayTime.value = 0.47;
+    delaySend.gain.value = 0.18;
+    feedbackL.gain.value = 0.16;
+    feedbackR.gain.value = 0.12;
+    panL.pan.value = -0.82;
+    panR.pan.value = 0.82;
+
+    limiter.threshold.value = -4;
+    limiter.knee.value = 14;
+    limiter.ratio.value = 10;
+    limiter.attack.value = 0.004;
+    limiter.release.value = 0.3;
+    output.gain.value = 0.88;
+
+    input.connect(dry).connect(output);
+    input
+      .connect(preDelay)
+      .connect(convolver)
+      .connect(highpass)
+      .connect(lowpass)
+      .connect(wet)
+      .connect(output);
+    input.connect(delaySend);
+    delaySend.connect(delayL);
+    delaySend.connect(delayR);
+    delayL.connect(panL).connect(output);
+    delayR.connect(panR).connect(output);
+    delayL.connect(feedbackL).connect(delayR);
+    delayR.connect(feedbackR).connect(delayL);
+    output.connect(limiter).connect(context.destination);
     this.context = context;
     this.input = input;
     this.wet = wet;
+    this.delaySend = delaySend;
+  }
+
+  private setSpace(amount: number, energy: number) {
+    if (!this.context || !this.wet || !this.delaySend) return;
+    const now = this.context.currentTime;
+    this.wet.gain.setTargetAtTime(0.18 + (amount / 100) * 0.7, now, 0.05);
+    this.delaySend.gain.setTargetAtTime(
+      clamp(0.045 + amount / 360 + energy / 1900, 0.045, 0.34),
+      now,
+      0.05,
+    );
+  }
+}
+
+/**
+ * True binaural oscillator pair: one mono carrier is sent only to the left
+ * channel and the other only to the right. The perceived beat equals the
+ * frequency difference. This graph deliberately bypasses all reverb and delay
+ * so channel separation remains intact.
+ */
+export class EtherlaneBinaural {
+  private context: AudioContext | null = null;
+  private output: GainNode | null = null;
+  private left: OscillatorNode | null = null;
+  private right: OscillatorNode | null = null;
+  private drift: OscillatorNode | null = null;
+  private mode: BinauralMode = "theta";
+
+  async start(mode: BinauralMode) {
+    this.mode = mode;
+    this.ensureGraph();
+    if (!this.context || !this.output) return false;
+    await this.context.resume();
+    this.applyMode(mode);
+    const now = this.context.currentTime;
+    this.output.gain.cancelScheduledValues(now);
+    this.output.gain.setValueAtTime(Math.max(this.output.gain.value, 0.0001), now);
+    this.output.gain.setTargetAtTime(0.034, now, 1.8);
+    return true;
+  }
+
+  setMode(mode: BinauralMode) {
+    this.mode = mode;
+    this.applyMode(mode);
+  }
+
+  stop() {
+    if (!this.context || !this.output) return;
+    const now = this.context.currentTime;
+    this.output.gain.cancelScheduledValues(now);
+    this.output.gain.setTargetAtTime(0.0001, now, 1.2);
+  }
+
+  dispose() {
+    try {
+      this.left?.stop();
+      this.right?.stop();
+      this.drift?.stop();
+    } catch {
+      // Nodes may already be stopped by the browser.
+    }
+    void this.context?.close();
+    this.context = null;
+    this.output = null;
+  }
+
+  private ensureGraph() {
+    if (this.context) return;
+    const AudioContextClass =
+      window.AudioContext ||
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const context = new AudioContextClass();
+    const left = context.createOscillator();
+    const right = context.createOscillator();
+    const leftGain = context.createGain();
+    const rightGain = context.createGain();
+    const merger = context.createChannelMerger(2);
+    const output = context.createGain();
+    const drift = context.createOscillator();
+    const driftDepth = context.createGain();
+
+    left.type = "sine";
+    right.type = "sine";
+    leftGain.gain.value = 1;
+    rightGain.gain.value = 1;
+    output.gain.value = 0.0001;
+    merger.channelInterpretation = "discrete";
+
+    // A very slow common drift keeps the bed organic while preserving the
+    // exact difference between left and right frequencies.
+    drift.type = "sine";
+    drift.frequency.value = 0.027;
+    driftDepth.gain.value = 1.6;
+    drift.connect(driftDepth);
+    driftDepth.connect(left.frequency);
+    driftDepth.connect(right.frequency);
+
+    left.connect(leftGain).connect(merger, 0, 0);
+    right.connect(rightGain).connect(merger, 0, 1);
+    merger.connect(output).connect(context.destination);
+    left.start();
+    right.start();
+    drift.start();
+
+    this.context = context;
+    this.output = output;
+    this.left = left;
+    this.right = right;
+    this.drift = drift;
+    this.applyMode(this.mode);
+  }
+
+  private applyMode(mode: BinauralMode) {
+    if (!this.context || !this.left || !this.right) return;
+    const preset = binauralPresets[mode];
+    const now = this.context.currentTime;
+    const { leftHz, rightHz } = binauralPair(preset.carrierHz, preset.beatHz);
+    this.left.frequency.setTargetAtTime(leftHz, now, 0.8);
+    this.right.frequency.setTargetAtTime(rightHz, now, 0.8);
   }
 }
 

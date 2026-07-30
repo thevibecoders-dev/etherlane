@@ -172,7 +172,7 @@ test("ships an immersive ambient synth without recording or persistence", async 
   assert.match(math, /padChordForHealth/);
   assert.doesNotMatch(engine, /MediaRecorder|localStorage|sessionStorage|indexedDB|document\.cookie/i);
 
-  for (const control of ["VOICE", "HARMONY", "TONE", "MOTION", "WARMTH", "REVERB"]) {
+  for (const control of ["VOICE", "HARMONY", "TONE", "MOTION", "WARMTH", "VOICE REVERB"]) {
     assert.match(page, new RegExp(control));
   }
 
@@ -181,22 +181,31 @@ test("ships an immersive ambient synth without recording or persistence", async 
 });
 
 test("keeps enhanced voice processing local and ships touch-ready mobile layouts", async () => {
-  const [page, engine, css, layout] = await Promise.all([
+  const [page, engine, css, layout, neuralVoice, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/synth-engine.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/neural-voice.ts", import.meta.url), "utf8"),
+    readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /voiceQualityScore/);
   assert.match(page, /\.filter\(\(voice\) => voice\.localService\)/);
   assert.match(page, /VOICE PROCESSOR/);
-  assert.match(page, /VOICE SPACE/);
-  assert.match(page, /speech text never leaves this device/);
+  assert.match(page, /VOICE REVERB/);
   assert.match(engine, /class EtherlaneVoiceSpace/);
   assert.match(engine, /createConvolver/);
   assert.match(engine, /preDelay/);
-  assert.doesNotMatch(page + engine, /getUserMedia|MediaRecorder|api\.openai|elevenlabs|googleapis/i);
+  assert.match(engine, /decodeAudioData/);
+  assert.match(engine, /delayL\.delayTime\.value = 0\.31/);
+  assert.match(engine, /delayR\.delayTime\.value = 0\.47/);
+  assert.match(neuralVoice, /import\("@realtimex\/piper-tts-web"\)/);
+  assert.match(neuralVoice, /en_US-hfc_female-medium/);
+  assert.match(packageJson, /@realtimex\/piper-tts-web/);
+  assert.match(packageJson, /onnxruntime-web/);
+  assert.match(page, /spoken text and signal content do not/);
+  assert.doesNotMatch(page + engine + neuralVoice, /getUserMedia|MediaRecorder|api\.openai|elevenlabs|googleapis/i);
 
   assert.match(layout, /width:\s*"device-width"/);
   assert.match(layout, /viewportFit:\s*"cover"/);
@@ -205,4 +214,39 @@ test("keeps enhanced voice processing local and ships touch-ready mobile layouts
   assert.match(css, /env\(safe-area-inset-bottom\)/);
   assert.match(css, /100dvh/);
   assert.match(css, /@media \(hover: none\) and \(pointer: coarse\)/);
+});
+
+test("implements selectable true-stereo binaural modes and an expanded patch bank", async () => {
+  const [page, engine, math, css] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/synth-engine.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/synth-math.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  for (const label of [
+    "ETHER BLOOM",
+    "GLASS ORBIT",
+    "CHOIR VOID",
+    "DEEP REST",
+    "SIGNAL STORM",
+    "DELTA REST",
+    "THETA DRIFT",
+    "ALPHA CALM",
+    "SOFT FOCUS",
+  ]) {
+    assert.match(page + engine, new RegExp(label));
+  }
+
+  assert.match(engine, /class EtherlaneBinaural/);
+  assert.match(engine, /createChannelMerger\(2\)/);
+  assert.match(engine, /left\.connect\(leftGain\)\.connect\(merger,\s*0,\s*0\)/);
+  assert.match(engine, /right\.connect\(rightGain\)\.connect\(merger,\s*0,\s*1\)/);
+  assert.match(engine, /bypasses all reverb and delay/);
+  assert.match(math, /function binauralPair/);
+  assert.match(page, /USE HEADPHONES/);
+  assert.match(page, /not medical treatment/);
+  assert.match(page, /dreamPhraseFor/);
+  assert.match(css, /\.binaural-grid/);
+  assert.match(css, /\.patch-grid/);
 });

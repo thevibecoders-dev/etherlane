@@ -1267,11 +1267,76 @@ button {
   border-right: 0;
 }
 
+.patch-module {
+  grid-column: 1 / -1;
+  border-right: 0;
+  background: linear-gradient(110deg, rgba(151, 105, 255, 0.045), transparent 58%);
+}
+
+.binaural-module {
+  grid-column: span 2;
+  border-right: 0;
+  background:
+    radial-gradient(circle at 18% 55%, rgba(87, 228, 255, 0.075), transparent 26%),
+    radial-gradient(circle at 82% 55%, rgba(151, 105, 255, 0.085), transparent 26%);
+}
+
 .synth-module > p {
   margin: 18px 0 0;
   color: rgba(241, 239, 249, 0.35);
   font-size: 10px;
   line-height: 1.55;
+}
+
+.patch-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.patch-grid button,
+.binaural-grid button {
+  display: grid;
+  min-height: 58px;
+  align-content: center;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.018);
+  color: rgba(241, 239, 249, 0.46);
+  text-align: left;
+  cursor: pointer;
+}
+
+.patch-grid button strong,
+.binaural-grid button strong {
+  font: 550 7px/1 var(--font-geist-mono), monospace;
+  letter-spacing: 0.09em;
+}
+
+.patch-grid button small,
+.binaural-grid button small {
+  color: rgba(241, 239, 249, 0.28);
+  font: 450 7px/1.35 var(--font-geist-mono), monospace;
+}
+
+.patch-grid button:hover,
+.patch-grid button:focus-visible,
+.patch-grid button.is-selected,
+.binaural-grid button:hover,
+.binaural-grid button:focus-visible,
+.binaural-grid button.is-selected {
+  outline: 0;
+  border-color: rgba(87, 228, 255, 0.45);
+  background: rgba(87, 228, 255, 0.07);
+  color: var(--cyan);
+}
+
+.custom-patch {
+  margin: 10px 0 0 !important;
+  color: var(--amber) !important;
+  font: 500 7px/1 var(--font-geist-mono), monospace !important;
+  letter-spacing: 0.1em;
 }
 
 .module-title {
@@ -1367,6 +1432,84 @@ button {
   gap: 5px;
 }
 
+.voice-density-choices {
+  margin-top: 6px;
+}
+
+.binaural-intro {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  margin: -7px 0 16px;
+  color: rgba(241, 239, 249, 0.42);
+  font: 550 8px/1 var(--font-geist-mono), monospace;
+  letter-spacing: 0.12em;
+}
+
+.binaural-intro i {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(87, 228, 255, 0.55), transparent);
+}
+
+.binaural-intro strong {
+  color: var(--cyan);
+  font-size: 13px;
+  font-weight: 500;
+  text-shadow: 0 0 18px rgba(87, 228, 255, 0.38);
+}
+
+.binaural-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.headphone-advice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 190, 91, 0.23);
+  background: rgba(255, 190, 91, 0.045);
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.headphone-advice strong {
+  color: var(--amber);
+  font-size: 7px;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+.headphone-advice span {
+  color: rgba(241, 239, 249, 0.34);
+  font-size: 7px;
+  line-height: 1.45;
+}
+
+.binaural-power {
+  width: 100%;
+  min-height: 43px;
+  margin-top: 9px;
+  border: 1px solid rgba(87, 228, 255, 0.25);
+  background: rgba(87, 228, 255, 0.045);
+  color: rgba(241, 239, 249, 0.62);
+  font: 550 7px/1 var(--font-geist-mono), monospace;
+  letter-spacing: 0.11em;
+  cursor: pointer;
+}
+
+.binaural-power:hover,
+.binaural-power:focus-visible,
+.binaural-power.is-active {
+  outline: 0;
+  border-color: rgba(87, 228, 255, 0.52);
+  background: rgba(87, 228, 255, 0.11);
+  color: var(--cyan);
+}
+
 .synth-slider {
   display: grid;
   gap: 10px;
@@ -1395,6 +1538,7 @@ button {
 .voice-selector {
   display: grid;
   gap: 10px;
+  margin-top: 13px;
 }
 
 .voice-selector > span {
@@ -1668,6 +1812,12 @@ button {
   }
 
   .synth-module:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .patch-module,
+  .binaural-module {
+    grid-column: 1 / -1;
     border-right: 0;
   }
 
@@ -1951,6 +2101,23 @@ button {
   .synth-module:nth-child(3n) {
     min-height: 0;
     border-right: 0;
+  }
+
+  .patch-module,
+  .binaural-module {
+    grid-column: 1;
+  }
+
+  .patch-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .patch-grid button:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .headphone-advice {
+    grid-template-columns: 1fr;
   }
 
   .signal-map {

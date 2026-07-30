@@ -7,6 +7,7 @@ import test from "node:test";
 
 import {
   accentForSignal,
+  binauralPair,
   clamp,
   ensembleDetune,
   midiToFrequency,
@@ -64,6 +65,19 @@ test("padChordForHealth grows with the number of live feeds", () => {
   assert.equal(one[0], off[0]);
   assert.equal(two[0], off[0]);
   assert.equal(three[0], off[0]);
+});
+
+test("binaural pairs preserve carrier centre and exact beat difference", () => {
+  for (const [carrier, beat] of [
+    [174, 2.5],
+    [192, 6],
+    [210, 10],
+    [228, 14],
+  ]) {
+    const pair = binauralPair(carrier, beat);
+    assert.equal(pair.rightHz - pair.leftHz, beat);
+    assert.equal((pair.leftHz + pair.rightHz) / 2, carrier);
+  }
 });
 
 test("pad harmony evolves while remaining inside the selected scale", () => {

@@ -11,10 +11,14 @@ voice. Its EL-01 Signal Synth quantizes those events into generative music.
 - Source-health harmony with smooth crossfades through six chord positions
 - Signal-driven bowed accents, safely bounded ping-pong delay, hall reverb and limiting
 - Distinct strings, glass and choir palettes with live shimmer updates
+- Five atmosphere patches: Ether Bloom, Glass Orbit, Choir Void, Deep Rest and Signal Storm
 - RIPE RIS, RIPE Atlas, Wikimedia, GitHub, Hacker News, blockchain and infrastructure signals
 - Five scales, six keys and live tone, motion and space controls
-- Best available local device voice, selectable in the Signal Synth
-- Synchronized Web Audio convolution space tail around spoken transmissions
+- On-demand Piper neural voice plus the best available local device voice
+- Full signal narration or sparse, slower dream phrases
+- True 3.8-second convolution reverb around Piper audio
+- Different 310 ms left and 470 ms right voice delays with bounded cross-feedback
+- Four true-stereo binaural modes with a visible headphones advisory
 - No samples, recording, uploads or audio persistence
 
 ## Visual fields
@@ -45,11 +49,13 @@ voice. Its EL-01 Signal Synth quantizes those events into generative music.
 - Public blockchain transaction shape only, excluding addresses and transaction hashes
 - No packet capture or private traffic
 - No payload inspection
-- No database or browser storage
+- No database or browser storage for signal data
 - A bounded in-memory display of at most 18 normalized events
 - Raw upstream messages are discarded immediately after transformation
-- Spoken strings use a local device voice only; no external TTS service receives them
-- Voice ambience is generated locally and is never recorded or retained
+- Piper downloads a reusable neural model on first use; inference then runs in the browser
+- The optional voice model may remain in device storage, but signal phrases are never stored
+- No external TTS service receives spoken strings
+- Voice ambience and binaural audio are generated locally and never recorded
 
 When all six public activity feeds are unavailable, the interface clearly
 switches to a synthetic continuity stream. Infrastructure observations remain

@@ -27,6 +27,17 @@ export function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+/** Equal-offset stereo carrier pair whose frequency difference is the binaural beat. */
+export function binauralPair(carrierHz, beatHz) {
+  const safeCarrier = clamp(Number(carrierHz), 80, 1000);
+  const safeBeat = clamp(Number(beatHz), 0.5, 40);
+  return {
+    leftHz: safeCarrier - safeBeat / 2,
+    rightHz: safeCarrier + safeBeat / 2,
+    beatHz: safeBeat,
+  };
+}
+
 export function midiToFrequency(note) {
   return 440 * 2 ** ((note - 69) / 12);
 }
