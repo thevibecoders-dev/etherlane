@@ -302,6 +302,71 @@ button {
   white-space: nowrap;
 }
 
+.voice-transmission {
+  position: absolute;
+  z-index: 3;
+  bottom: 58px;
+  left: 34px;
+  display: grid;
+  width: min(470px, 41vw);
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 7px 13px;
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.voice-transmission small {
+  color: var(--cyan);
+  font-size: 7px;
+  letter-spacing: 0.15em;
+}
+
+.voice-transmission strong {
+  overflow: hidden;
+  color: rgba(241, 239, 249, 0.42);
+  font-size: 8px;
+  font-weight: 520;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-transmission > span {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 3px;
+  height: 12px;
+  opacity: 0.34;
+}
+
+.voice-transmission i {
+  width: 2px;
+  height: 2px;
+  background: linear-gradient(180deg, var(--cyan), var(--violet));
+  box-shadow: 0 0 5px rgba(87, 228, 255, 0.4);
+}
+
+.voice-transmission.is-speaking > span {
+  opacity: 0.82;
+}
+
+.voice-transmission.is-speaking i {
+  animation: transmit 1.3s ease-in-out infinite alternate;
+}
+
+.voice-transmission i:nth-child(3n) {
+  animation-delay: -0.6s;
+}
+
+.voice-transmission i:nth-child(4n) {
+  animation-delay: -1s;
+}
+
+.voice-transmission i:nth-child(5n) {
+  animation-delay: -0.25s;
+}
+
 .stream-panel {
   position: absolute;
   z-index: 3;
@@ -491,6 +556,11 @@ button {
 .secondary-control:focus-visible {
   outline: 0;
   background: rgba(255, 255, 255, 0.055);
+}
+
+.primary-control:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .primary-control.is-active {
@@ -855,6 +925,17 @@ button {
   }
 }
 
+@keyframes transmit {
+  from {
+    height: 2px;
+    transform: translateY(3px);
+  }
+  to {
+    height: 12px;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 940px) {
   .topbar {
     grid-template-columns: 1fr auto;
@@ -880,6 +961,10 @@ button {
 
   .live-caption {
     display: none;
+  }
+
+  .voice-transmission {
+    width: 48vw;
   }
 
   .footerbar {
@@ -933,6 +1018,10 @@ button {
 
   .horizon-lockup {
     top: 65%;
+  }
+
+  .voice-transmission {
+    display: none;
   }
 
   .stream-panel {

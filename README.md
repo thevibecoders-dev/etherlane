@@ -1,20 +1,23 @@
 # Etherlane
 
 Etherlane is a live audiovisual internet observatory. It translates public
-routing updates from RIPE RIS and public measurements from RIPE Atlas into
-light, movement and generative sound.
+routing updates from RIPE RIS, public measurements from RIPE Atlas and public
+Wikimedia change events into light, event-driven motion and a changing data
+voice.
 
 ## Privacy boundary
 
 - Public routing and measurement feeds only
+- Public Wikimedia change metadata, excluding bots, usernames, titles and comments
 - No packet capture or private traffic
 - No payload inspection
 - No database or browser storage
 - A bounded in-memory display of at most 18 normalized events
 - Raw upstream messages are discarded immediately after transformation
+- Spoken strings use a local device voice only
 
-When neither public feed is available, the interface clearly switches to a
-synthetic continuity stream.
+When all three public feeds are unavailable, the interface clearly switches to
+a synthetic continuity stream.
 
 ## Development
 

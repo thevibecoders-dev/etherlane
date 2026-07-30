@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type SignalSource = "RIS" | "ATLAS" | "SYNTHETIC";
+type SignalSource = "RIS" | "ATLAS" | "WIKIMEDIA" | "SYNTHETIC";
 type SignalTone = "violet" | "cyan" | "amber" | "coral";
+type SignalShape = "beam" | "ring" | "packet" | "spark";
 
 type SignalEvent = {
   id: string;
@@ -13,6 +14,7 @@ type SignalEvent = {
   detail: string;
   tone: SignalTone;
   magnitude: number;
+  spoken: string;
   timestamp: number;
 };
 
@@ -23,11 +25,23 @@ type Particle = {
   tone: SignalTone;
   size: number;
   drift: number;
+  shape: SignalShape;
+  phase: number;
+};
+
+type Shockwave = {
+  lane: number;
+  depth: number;
+  life: number;
+  tone: SignalTone;
+  energy: number;
+  shape: SignalShape;
 };
 
 type SourceHealth = {
   ris: "connecting" | "live" | "offline";
   atlas: "connecting" | "live" | "offline";
+  wikimedia: "connecting" | "live" | "offline";
 };
 
 const tones: Record<SignalTone, { rgb: string; hex: string }> = {
@@ -38,13 +52,36 @@ const tones: Record<SignalTone, { rgb: string; hex: string }> = {
 };
 
 const syntheticSignals = [
-  ["ROUTE ANNOUNCED", "AS64512 → 198.51.100.0/24", "violet"],
-  ["PING RETURNED", "41.8 ms · Europe", "cyan"],
-  ["PATH SHIFT", "6 autonomous systems traversed", "amber"],
-  ["ROUTE WITHDRAWN", "203.0.113.0/24 disappeared", "coral"],
-  ["PROBE ONLINE", "Measurement node rejoined", "cyan"],
-  ["KEEPALIVE", "Routing session sustained", "violet"],
+  ["ROUTE ANNOUNCED", "AS64512 → 198.51.100.0/24", "violet", "Route announced. I P version four. Six hops."],
+  ["PING RETURNED", "41.8 ms · Europe", "cyan", "Ping returned. Forty two milliseconds."],
+  ["PATH SHIFT", "6 autonomous systems traversed", "amber", "Path shifted. Six autonomous systems."],
+  ["ROUTE WITHDRAWN", "203.0.113.0/24 disappeared", "coral", "Route withdrawn. I P version four."],
+  ["PAGE EDITED", "enwiki · +418 bytes", "cyan", "Public page edited. English Wikipedia. Four hundred bytes added."],
+  ["PEER STATE", "rrc21 · connected", "violet", "Routing peer connected."],
 ] as const;
+
+const risKinds: Record<string, { kind: string; label: string; tone: SignalTone }> = {
+  KEEPALIVE: {
+    kind: "SESSION PULSE",
+    label: "Two public routers kept their session alive",
+    tone: "violet",
+  },
+  OPEN: {
+    kind: "BGP SESSION OPEN",
+    label: "A public routing session began",
+    tone: "cyan",
+  },
+  NOTIFICATION: {
+    kind: "BGP NOTIFICATION",
+    label: "A public routing peer sent a notification",
+    tone: "coral",
+  },
+  RIS_PEER_STATE: {
+    kind: "PEER STATE",
+    label: "A route collector observed a peer state change",
+    tone: "amber",
+  },
+};
 
 function formatTime(timestamp: number) {
   return new Intl.DateTimeFormat("en-GB", {
@@ -59,23 +96,54 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
+function digits(value: unknown) {
+  return String(value ?? "unknown")
+    .replace(/[^0-9]/g, "")
+    .split("")
+    .join(" ");
+}
+
+function spokenPrefix(prefix: string) {
+  const length = prefix.split("/")[1] ?? "unknown";
+  return `${prefix.includes(":") ? "I P version six" : "I P version four"}, slash ${length}`;
+}
+
+function wikiName(value: unknown) {
+  const wiki = String(value ?? "a public wiki").toLowerCase();
+  if (wiki === "enwiki") return "English Wikipedia";
+  if (wiki === "dewiki") return "German Wikipedia";
+  if (wiki === "nlwiki") return "Dutch Wikipedia";
+  if (wiki.endsWith("wiki")) return `${wiki.slice(0, -4).toUpperCase()} Wikipedia`;
+  return "a public Wikimedia project";
+}
+
+function shapeFor(kind: string): SignalShape {
+  if (/PING|PULSE|KEEPALIVE/.test(kind)) return "ring";
+  if (/PAGE|CATEGORY|LOG|LINK/.test(kind)) return "packet";
+  if (/WITHDRAWN|NOTIFICATION|STATE/.test(kind)) return "spark";
+  return "beam";
+}
+
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const particlesRef = useRef<Particle[]>([]);
-  const audioRef = useRef<AudioContext | null>(null);
-  const masterGainRef = useRef<GainNode | null>(null);
-  const lastNoteRef = useRef(0);
+  const shockwavesRef = useRef<Shockwave[]>([]);
+  const localVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const lastVoiceRef = useRef(0);
   const pausedRef = useRef(false);
   const audioEnabledRef = useRef(false);
   const intensityRef = useRef(0.72);
-  const sourceEmitRef = useRef({ ris: 0, atlas: 0 });
+  const sourceEmitRef = useRef({ ris: 0, atlas: 0, wikimedia: 0 });
 
   const [events, setEvents] = useState<SignalEvent[]>([]);
   const [sourceHealth, setSourceHealth] = useState<SourceHealth>({
     ris: "connecting",
     atlas: "connecting",
+    wikimedia: "connecting",
   });
   const [audioEnabled, setAudioEnabled] = useState(false);
+  const [voiceAvailable, setVoiceAvailable] = useState(false);
+  const [spokenPhrase, setSpokenPhrase] = useState("VOICE CHANNEL STANDBY");
   const [paused, setPaused] = useState(false);
   const [intensity, setIntensity] = useState(72);
   const [signalCount, setSignalCount] = useState(0);
@@ -94,47 +162,41 @@ export default function Home() {
     intensityRef.current = intensity / 100;
   }, [intensity]);
 
-  const playNote = useCallback((event: SignalEvent) => {
-    if (!audioEnabledRef.current || !audioRef.current || !masterGainRef.current) return;
+  useEffect(() => {
+    const synchronizeVoices = () => {
+      const voices = window.speechSynthesis?.getVoices() ?? [];
+      const localEnglish =
+        voices.find((voice) => voice.localService && /^en[-_]/i.test(voice.lang)) ??
+        voices.find((voice) => voice.localService) ??
+        null;
+      localVoiceRef.current = localEnglish;
+      setVoiceAvailable(Boolean(localEnglish));
+    };
+
+    synchronizeVoices();
+    window.speechSynthesis?.addEventListener("voiceschanged", synchronizeVoices);
+    return () => {
+      window.speechSynthesis?.removeEventListener("voiceschanged", synchronizeVoices);
+      window.speechSynthesis?.cancel();
+    };
+  }, []);
+
+  const speakSignal = useCallback((event: SignalEvent) => {
+    if (!audioEnabledRef.current || !localVoiceRef.current || !window.speechSynthesis) return;
     const nowMs = performance.now();
-    if (nowMs - lastNoteRef.current < 95) return;
-    lastNoteRef.current = nowMs;
+    const cadence = 2300 - intensityRef.current * 900;
+    if (nowMs - lastVoiceRef.current < cadence || window.speechSynthesis.speaking) return;
+    lastVoiceRef.current = nowMs;
 
-    const context = audioRef.current;
-    const now = context.currentTime;
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    const filter = context.createBiquadFilter();
-    const pan = context.createStereoPanner();
-
-    const base = {
-      "ROUTE ANNOUNCED": 164.81,
-      "ROUTE WITHDRAWN": 110,
-      "PING RETURNED": 261.63,
-      "PATH SHIFT": 196,
-      KEEPALIVE: 329.63,
-      "PROBE ONLINE": 392,
-    }[event.kind] ?? 220;
-
-    oscillator.type =
-      event.tone === "coral" ? "sawtooth" : event.tone === "cyan" ? "sine" : "triangle";
-    oscillator.frequency.setValueAtTime(base * (0.98 + Math.random() * 0.04), now);
-    if (event.tone === "coral") {
-      oscillator.frequency.exponentialRampToValueAtTime(base * 0.56, now + 0.32);
-    }
-
-    filter.type = "lowpass";
-    filter.frequency.value = 1100 + event.magnitude * 24;
-    pan.pan.value = clamp((event.magnitude % 20) / 10 - 1, -0.8, 0.8);
-
-    const peak = 0.016 + intensityRef.current * 0.024;
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(peak, now + 0.018);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.34);
-
-    oscillator.connect(filter).connect(pan).connect(gain).connect(masterGainRef.current);
-    oscillator.start(now);
-    oscillator.stop(now + 0.36);
+    const utterance = new SpeechSynthesisUtterance(event.spoken);
+    utterance.voice = localVoiceRef.current;
+    utterance.lang = localVoiceRef.current.lang;
+    utterance.rate = 0.82 + clamp(event.magnitude / 100, 0, 1) * 0.26;
+    utterance.pitch =
+      event.tone === "coral" ? 0.72 : event.tone === "cyan" ? 1.14 : event.tone === "amber" ? 0.92 : 1.02;
+    utterance.volume = 0.3 + intensityRef.current * 0.55;
+    setSpokenPhrase(event.spoken.toUpperCase());
+    window.speechSynthesis.speak(utterance);
   }, []);
 
   const emitSignal = useCallback(
@@ -150,20 +212,35 @@ export default function Home() {
       setSignalCount((current) => current + 1);
 
       const particleBurst = 2 + Math.round(event.magnitude / 22);
+      const shape = shapeFor(event.kind);
       for (let index = 0; index < particleBurst; index += 1) {
         particlesRef.current.push({
-          lane: (Math.random() - 0.5) * 1.7,
+          lane:
+            shape === "packet"
+              ? (index % 2 ? -1 : 1) * (0.18 + Math.random() * 0.65)
+              : (Math.random() - 0.5) * 1.7,
           depth: Math.random() * 0.1,
           speed: 0.0026 + Math.random() * 0.004 + event.magnitude / 42000,
           tone: event.tone,
           size: 0.65 + Math.random() * 1.45,
           drift: (Math.random() - 0.5) * 0.001,
+          shape,
+          phase: Math.random() * Math.PI * 2,
         });
       }
-      particlesRef.current = particlesRef.current.slice(-260);
-      playNote(complete);
+      particlesRef.current = particlesRef.current.slice(-320);
+      shockwavesRef.current.push({
+        lane: (Math.random() - 0.5) * 0.78,
+        depth: 0.05 + Math.random() * 0.18,
+        life: 1,
+        tone: event.tone,
+        energy: event.magnitude,
+        shape,
+      });
+      shockwavesRef.current = shockwavesRef.current.slice(-28);
+      speakSignal(complete);
     },
-    [playNote],
+    [speakSignal],
   );
 
   useEffect(() => {
@@ -185,6 +262,8 @@ export default function Home() {
         tone: (["violet", "cyan", "amber"] as SignalTone[])[index % 3],
         size: 0.5 + Math.random() * 1.2,
         drift: (Math.random() - 0.5) * 0.0006,
+        shape: (["beam", "ring", "packet"] as SignalShape[])[index % 3],
+        phase: Math.random() * Math.PI * 2,
       });
     }
 
@@ -203,7 +282,8 @@ export default function Home() {
     resize();
 
     const project = (lane: number, depth: number) => {
-      const horizonY = height * 0.41;
+      const time = Date.now() * 0.001;
+      const horizonY = height * (0.405 + Math.sin(time * 0.17) * 0.006);
       const perspective = Math.pow(depth, 1.7);
       return {
         x: width / 2 + lane * perspective * width * 0.48,
@@ -233,6 +313,26 @@ export default function Home() {
       context.save();
       context.globalCompositeOperation = "screen";
 
+      const aurora = context.createLinearGradient(0, horizonY - height * 0.12, width, horizonY + height * 0.18);
+      aurora.addColorStop(0, `rgba(87,228,255,${0.018 + Math.sin(time * 0.37) * 0.008})`);
+      aurora.addColorStop(0.5, `rgba(151,105,255,${0.07 + Math.sin(time * 0.23) * 0.025})`);
+      aurora.addColorStop(1, `rgba(255,100,105,${0.016 + Math.cos(time * 0.31) * 0.008})`);
+      context.fillStyle = aurora;
+      context.beginPath();
+      context.moveTo(0, horizonY + Math.sin(time * 0.3) * 24);
+      context.bezierCurveTo(
+        width * 0.27,
+        horizonY - 70 + Math.sin(time * 0.47) * 30,
+        width * 0.68,
+        horizonY + 82 + Math.cos(time * 0.33) * 38,
+        width,
+        horizonY - 12 + Math.sin(time * 0.29) * 22,
+      );
+      context.lineTo(width, horizonY + height * 0.25);
+      context.lineTo(0, horizonY + height * 0.2);
+      context.closePath();
+      context.fill();
+
       for (let lane = -2; lane <= 2; lane += 1) {
         const upper = project(lane * 0.34, 0.015);
         const lower = project(lane * 0.34, 1.1);
@@ -249,7 +349,7 @@ export default function Home() {
       }
 
       for (let rung = 0; rung < 22; rung += 1) {
-        const phase = ((Date.now() * 0.00008 + rung / 22) % 1) ** 1.5;
+        const phase = ((Date.now() * 0.00011 + rung / 22) % 1) ** 1.5;
         const left = project(-0.82, phase);
         const right = project(0.82, phase);
         context.strokeStyle = `rgba(119, 120, 255, ${phase * 0.15})`;
@@ -263,7 +363,7 @@ export default function Home() {
       for (const particle of particlesRef.current) {
         if (!pausedRef.current) {
           particle.depth += particle.speed * (0.35 + intensityRef.current * 1.2);
-          particle.lane += particle.drift;
+          particle.lane += particle.drift + Math.sin(time * 0.8 + particle.phase) * 0.00018;
         }
         if (particle.depth > 1.08) {
           particle.depth = Math.random() * 0.035;
@@ -287,9 +387,48 @@ export default function Home() {
 
         context.fillStyle = `rgba(${color.rgb}, ${alpha})`;
         context.beginPath();
-        context.arc(point.x, point.y, Math.max(0.7, radius), 0, Math.PI * 2);
+        if (particle.shape === "packet") {
+          const side = Math.max(1.2, radius * 1.7);
+          context.rect(point.x - side / 2, point.y - side / 2, side, side);
+        } else if (particle.shape === "ring") {
+          context.arc(point.x, point.y, Math.max(1.4, radius * 1.8), 0, Math.PI * 2);
+          context.lineWidth = Math.max(0.6, radius * 0.45);
+          context.strokeStyle = `rgba(${color.rgb}, ${alpha})`;
+          context.stroke();
+        } else if (particle.shape === "spark") {
+          const side = Math.max(1.4, radius * 2.2);
+          context.moveTo(point.x, point.y - side);
+          context.lineTo(point.x + side * 0.65, point.y);
+          context.lineTo(point.x, point.y + side);
+          context.lineTo(point.x - side * 0.65, point.y);
+          context.closePath();
+        } else {
+          context.arc(point.x, point.y, Math.max(0.7, radius), 0, Math.PI * 2);
+        }
         context.fill();
       }
+
+      for (const wave of shockwavesRef.current) {
+        if (!pausedRef.current) {
+          wave.life -= 0.008 + intensityRef.current * 0.006;
+          wave.depth += 0.0014 + wave.energy / 85000;
+        }
+        const point = project(wave.lane, wave.depth);
+        const color = tones[wave.tone];
+        const radius = (1 - wave.life) * (24 + wave.energy * 0.72) * point.scale;
+        context.strokeStyle = `rgba(${color.rgb}, ${clamp(wave.life * 0.64, 0, 0.64)})`;
+        context.lineWidth = 0.6 + wave.life * 1.4;
+        context.shadowColor = color.hex;
+        context.shadowBlur = 18 * wave.life;
+        context.beginPath();
+        if (wave.shape === "packet") {
+          context.rect(point.x - radius, point.y - radius * 0.42, radius * 2, radius * 0.84);
+        } else {
+          context.ellipse(point.x, point.y, radius * 1.5, radius * 0.48, 0, 0, Math.PI * 2);
+        }
+        context.stroke();
+      }
+      shockwavesRef.current = shockwavesRef.current.filter((wave) => wave.life > 0);
 
       context.restore();
       context.shadowBlur = 0;
@@ -321,6 +460,7 @@ export default function Home() {
     let disposed = false;
     let ris: WebSocket | null = null;
     let atlas: WebSocket | null = null;
+    let wikimedia: EventSource | null = null;
     let risRetry: number | undefined;
     let atlasRetry: number | undefined;
 
@@ -335,32 +475,61 @@ export default function Home() {
         ris.send(
           JSON.stringify({
             type: "ris_subscribe",
-            data: { type: "UPDATE", socketOptions: { includeRaw: false } },
+            data: { socketOptions: { includeRaw: false } },
           }),
         );
       };
 
       ris.onmessage = (message) => {
-        if (disposed || Date.now() - sourceEmitRef.current.ris < 170) return;
         try {
           const parsed = JSON.parse(String(message.data));
-          if (parsed.type !== "ris_message" || parsed.data?.type !== "UPDATE") return;
+          if (parsed.type !== "ris_message") return;
           const data = parsed.data;
+          const cadence = data?.type === "KEEPALIVE" ? 1200 : 190;
+          if (disposed || Date.now() - sourceEmitRef.current.ris < cadence) return;
+          sourceEmitRef.current.ris = Date.now();
+
+          if (data?.type !== "UPDATE") {
+            const descriptor = risKinds[data?.type];
+            if (!descriptor) return;
+            const host = String(data.host ?? "a route collector");
+            const state = String(data.state ?? data.new_state ?? "").replaceAll("_", " ").toLowerCase();
+            emitSignal({
+              source: "RIS",
+              kind: descriptor.kind,
+              label: descriptor.label,
+              detail: `${host} · AS${data.peer_asn ?? "?"}${state ? ` · ${state}` : ""}`,
+              tone: descriptor.tone,
+              magnitude: data.type === "NOTIFICATION" ? 88 : data.type === "RIS_PEER_STATE" ? 66 : 28,
+              spoken:
+                data.type === "KEEPALIVE"
+                  ? `Session pulse. A S ${digits(data.peer_asn)}.`
+                  : `${descriptor.kind.toLowerCase()}. A S ${digits(data.peer_asn)}${state ? `. ${state}` : ""}.`,
+            });
+            return;
+          }
+
           const announcements = Array.isArray(data.announcements)
             ? data.announcements.flatMap((item: { prefixes?: string[] }) => item.prefixes ?? [])
             : [];
           const withdrawals = Array.isArray(data.withdrawals) ? data.withdrawals : [];
           const isWithdrawal = withdrawals.length > 0 && announcements.length === 0;
+          const isExchange = withdrawals.length > 0 && announcements.length > 0;
           const prefix = (isWithdrawal ? withdrawals[0] : announcements[0]) ?? "a public prefix";
           const pathLength = Array.isArray(data.path) ? data.path.length : 0;
-          sourceEmitRef.current.ris = Date.now();
+          const kind = isExchange ? "ROUTE EXCHANGE" : isWithdrawal ? "ROUTE WITHDRAWN" : "ROUTE ANNOUNCED";
           emitSignal({
             source: "RIS",
-            kind: isWithdrawal ? "ROUTE WITHDRAWN" : "ROUTE ANNOUNCED",
-            label: isWithdrawal ? "A route left the global table" : "A route entered the global table",
+            kind,
+            label: isExchange
+              ? "Routes entered and left the global table together"
+              : isWithdrawal
+                ? "A route left the global table"
+                : "A route entered the global table",
             detail: `AS${data.peer_asn ?? "?"} · ${prefix}${pathLength ? ` · ${pathLength} hops` : ""}`,
-            tone: isWithdrawal ? "coral" : pathLength > 7 ? "amber" : "violet",
+            tone: isWithdrawal ? "coral" : isExchange || pathLength > 7 ? "amber" : "violet",
             magnitude: clamp(24 + pathLength * 7, 25, 100),
+            spoken: `${kind.toLowerCase()}. A S ${digits(data.peer_asn)}. ${spokenPrefix(prefix)}${pathLength ? `. ${pathLength} hops` : ""}.`,
           });
         } catch {
           // Malformed upstream messages are ignored and never retained.
@@ -402,11 +571,22 @@ export default function Home() {
           sourceEmitRef.current.atlas = Date.now();
           emitSignal({
             source: "ATLAS",
-            kind: "PING RETURNED",
+            kind:
+              latency === null
+                ? "PROBE RESPONSE"
+                : latency > 220
+                  ? "HIGH LATENCY"
+                  : latency < 25
+                    ? "FAST RETURN"
+                    : "PING RETURNED",
             label: "A measurement crossed the network",
             detail: latency === null ? `Probe ${data.prb_id ?? "unknown"} responded` : `${latency.toFixed(1)} ms · probe ${data.prb_id ?? "?"}`,
-            tone: latency !== null && latency > 150 ? "amber" : "cyan",
+            tone: latency !== null && latency > 220 ? "coral" : latency !== null && latency > 120 ? "amber" : "cyan",
             magnitude: clamp(latency ?? 44, 16, 100),
+            spoken:
+              latency === null
+                ? `Probe ${digits(data.prb_id)} responded.`
+                : `${latency > 220 ? "High latency" : latency < 25 ? "Fast return" : "Ping returned"}. ${Math.round(latency)} milliseconds. Probe ${digits(data.prb_id)}.`,
           });
         } catch {
           // Malformed upstream messages are ignored and never retained.
@@ -421,8 +601,57 @@ export default function Home() {
       };
     };
 
+    const connectWikimedia = () => {
+      if (disposed) return;
+      setSourceHealth((current) => ({ ...current, wikimedia: "connecting" }));
+      wikimedia = new EventSource("https://stream.wikimedia.org/v2/stream/recentchange");
+
+      wikimedia.onopen = () => {
+        if (disposed) return;
+        setSourceHealth((current) => ({ ...current, wikimedia: "live" }));
+      };
+
+      wikimedia.onmessage = (message) => {
+        if (disposed || Date.now() - sourceEmitRef.current.wikimedia < 680) return;
+        try {
+          const data = JSON.parse(String(message.data));
+          if (data.bot === true) return;
+          const type = String(data.type ?? "edit");
+          const oldLength = Number(data.length?.old ?? 0);
+          const newLength = Number(data.length?.new ?? oldLength);
+          const delta = newLength - oldLength;
+          const kind = {
+            new: "PAGE CREATED",
+            edit: "PAGE EDITED",
+            log: "PUBLIC LOG",
+            categorize: "CATEGORY SHIFT",
+            external: "LINK CHANGED",
+          }[type] ?? "PUBLIC CHANGE";
+          const project = wikiName(data.wiki);
+          sourceEmitRef.current.wikimedia = Date.now();
+          emitSignal({
+            source: "WIKIMEDIA",
+            kind,
+            label: "A public knowledge project changed",
+            detail: `${String(data.wiki ?? data.server_name ?? "Wikimedia")} · ${delta >= 0 ? "+" : ""}${delta} bytes`,
+            tone: type === "new" ? "violet" : delta < -1800 ? "coral" : Math.abs(delta) > 2400 ? "amber" : "cyan",
+            magnitude: clamp(24 + Math.log10(Math.abs(delta) + 1) * 18, 24, 96),
+            spoken: `${kind.toLowerCase()}. ${project}. ${Math.abs(delta) < 1 ? "Metadata changed" : `${Math.abs(delta)} bytes ${delta >= 0 ? "added" : "removed"}`}.`,
+          });
+        } catch {
+          // Malformed upstream messages are ignored and never retained.
+        }
+      };
+
+      wikimedia.onerror = () => {
+        if (disposed) return;
+        setSourceHealth((current) => ({ ...current, wikimedia: "offline" }));
+      };
+    };
+
     connectRis();
     connectAtlas();
+    connectWikimedia();
 
     return () => {
       disposed = true;
@@ -430,14 +659,18 @@ export default function Home() {
       window.clearTimeout(atlasRetry);
       ris?.close();
       atlas?.close();
+      wikimedia?.close();
     };
   }, [emitSignal]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      const bothOffline = sourceHealth.ris !== "live" && sourceHealth.atlas !== "live";
-      if (!bothOffline) return;
-      const [kind, detail, tone] =
+      const allOffline =
+        sourceHealth.ris !== "live" &&
+        sourceHealth.atlas !== "live" &&
+        sourceHealth.wikimedia !== "live";
+      if (!allOffline) return;
+      const [kind, detail, tone, spoken] =
         syntheticSignals[Math.floor(Math.random() * syntheticSignals.length)];
       emitSignal({
         source: "SYNTHETIC",
@@ -446,40 +679,40 @@ export default function Home() {
         detail,
         tone,
         magnitude: 28 + Math.random() * 64,
+        spoken,
       });
     }, 720);
     return () => window.clearInterval(interval);
   }, [emitSignal, sourceHealth]);
 
-  useEffect(
-    () => () => {
-      audioRef.current?.close();
-    },
-    [],
-  );
-
-  const toggleAudio = async () => {
-    if (!audioRef.current) {
-      const AudioContextClass =
-        window.AudioContext ||
-        (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!AudioContextClass) return;
-      const context = new AudioContextClass();
-      const master = context.createGain();
-      const compressor = context.createDynamicsCompressor();
-      master.gain.value = 0.72;
-      master.connect(compressor).connect(context.destination);
-      audioRef.current = context;
-      masterGainRef.current = master;
+  const toggleAudio = () => {
+    const next = !audioEnabledRef.current;
+    audioEnabledRef.current = next;
+    setAudioEnabled(next);
+    if (!next) {
+      window.speechSynthesis?.cancel();
+      setSpokenPhrase("VOICE CHANNEL STANDBY");
+      return;
     }
-    if (audioRef.current.state === "suspended") await audioRef.current.resume();
-    setAudioEnabled((current) => !current);
+    if (localVoiceRef.current) {
+      const utterance = new SpeechSynthesisUtterance("Etherlane. Data voice online.");
+      utterance.voice = localVoiceRef.current;
+      utterance.lang = localVoiceRef.current.lang;
+      utterance.rate = 0.88;
+      utterance.volume = 0.62;
+      window.speechSynthesis.speak(utterance);
+      setSpokenPhrase("DATA VOICE ONLINE");
+    }
   };
 
   const connectionLabel = useMemo(() => {
-    const liveCount = Number(sourceHealth.ris === "live") + Number(sourceHealth.atlas === "live");
-    if (liveCount === 2) return "2 LIVE SOURCES";
+    const liveCount =
+      Number(sourceHealth.ris === "live") +
+      Number(sourceHealth.atlas === "live") +
+      Number(sourceHealth.wikimedia === "live");
+    if (liveCount === 3) return "3 LIVE SOURCES";
     if (liveCount === 1) return "1 LIVE SOURCE";
+    if (liveCount === 2) return "2 LIVE SOURCES";
     return "SYNTHETIC FALLBACK";
   }, [sourceHealth]);
 
@@ -502,7 +735,15 @@ export default function Home() {
         </a>
 
         <div className="topbar-status" aria-live="polite">
-          <span className={`live-dot ${sourceHealth.ris === "live" || sourceHealth.atlas === "live" ? "is-live" : ""}`} />
+          <span
+            className={`live-dot ${
+              sourceHealth.ris === "live" ||
+              sourceHealth.atlas === "live" ||
+              sourceHealth.wikimedia === "live"
+                ? "is-live"
+                : ""
+            }`}
+          />
           {connectionLabel}
         </div>
 
@@ -519,8 +760,8 @@ export default function Home() {
             <span>THE FLOW.</span>
           </h1>
           <p className="hero-intro">
-            Global routes shift. Measurements return. The invisible infrastructure of the
-            internet becomes light, movement and sound.
+            Global routes shift. Measurements return. Public knowledge changes. The invisible
+            internet becomes light, motion and a continuously mutating data voice.
           </p>
         </div>
 
@@ -536,6 +777,16 @@ export default function Home() {
             <small>{latest ? `${latest.source} / ${latest.kind}` : "ACQUIRING SIGNALS"}</small>
             <strong>{latest?.detail ?? "Connecting to the public internet…"}</strong>
           </div>
+        </div>
+
+        <div className={`voice-transmission ${audioEnabled ? "is-speaking" : ""}`} aria-live="polite">
+          <small>{audioEnabled ? "NOW VOICING" : "DATA VOICE"}</small>
+          <strong>{spokenPhrase}</strong>
+          <span aria-hidden="true">
+            {Array.from({ length: 18 }, (_, index) => (
+              <i key={index} />
+            ))}
+          </span>
         </div>
       </section>
 
@@ -582,6 +833,7 @@ export default function Home() {
           className={`primary-control ${audioEnabled ? "is-active" : ""}`}
           onClick={toggleAudio}
           aria-pressed={audioEnabled}
+          disabled={!voiceAvailable}
         >
           <span className="sound-bars" aria-hidden="true">
             <i />
@@ -590,8 +842,10 @@ export default function Home() {
             <i />
           </span>
           <span>
-            <small>SOUND</small>
-            <strong>{audioEnabled ? "ON" : "ENTER AUDIO"}</strong>
+            <small>DATA VOICE</small>
+            <strong>
+              {!voiceAvailable ? "LOCAL VOICE NEEDED" : audioEnabled ? "SPEAKING" : "ENTER VOICE"}
+            </strong>
           </span>
         </button>
 
@@ -631,6 +885,9 @@ export default function Home() {
           </span>
           <span className={`source-tag ${sourceHealth.atlas === "live" ? "is-live" : ""}`}>
             <i /> RIPE ATLAS
+          </span>
+          <span className={`source-tag ${sourceHealth.wikimedia === "live" ? "is-live" : ""}`}>
+            <i /> WIKIMEDIA
           </span>
         </div>
         <p>
@@ -683,16 +940,16 @@ export default function Home() {
                 <span>01</span>
                 <h3>WHAT YOU SEE</h3>
                 <p>
-                  Real public routing updates from RIPE RIS and global measurement results
-                  from RIPE Atlas, translated into an ephemeral visual language.
+                  Public routing updates, global measurements and Wikimedia changes, translated
+                  into beams, pulses, packets, auroras and event-driven shockwaves.
                 </p>
               </section>
               <section>
                 <span>02</span>
                 <h3>WHAT YOU HEAR</h3>
                 <p>
-                  Pitch, rhythm and space are generated from event type, route depth and
-                  latency. Audio begins only when you choose to enter it.
+                  A local device voice speaks changing technical strings derived from route type,
+                  IP family, path depth, latency and public change size. No content or usernames.
                 </p>
               </section>
               <section>

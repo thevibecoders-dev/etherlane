@@ -36,10 +36,12 @@ test("server-renders the Etherlane experience and metadata", async () => {
   assert.match(html, /ZERO RETENTION/);
   assert.match(html, /RIPE RIS/);
   assert.match(html, /RIPE ATLAS/);
+  assert.match(html, /WIKIMEDIA/);
+  assert.match(html, /DATA VOICE/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|VibeVeilig/i);
 });
 
-test("uses public read-only feeds and never adds persistence", async () => {
+test("uses three public read-only feeds and never adds persistence", async () => {
   const [page, layout, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
@@ -48,8 +50,13 @@ test("uses public read-only feeds and never adds persistence", async () => {
 
   assert.match(page, /wss:\/\/ris-live\.ripe\.net\/v1\/ws/);
   assert.match(page, /wss:\/\/atlas-stream\.ripe\.net\/stream/);
+  assert.match(page, /https:\/\/stream\.wikimedia\.org\/v2\/stream\/recentchange/);
   assert.match(page, /includeRaw:\s*false/);
   assert.match(page, /slice\(0,\s*18\)/);
+  assert.match(page, /SpeechSynthesisUtterance/);
+  assert.match(page, /voice\.localService/);
+  assert.match(page, /data\.bot === true/);
+  assert.doesNotMatch(page, /data\.(user|comment|title)\b/);
   assert.doesNotMatch(page, /localStorage|sessionStorage|indexedDB|document\.cookie/i);
   assert.doesNotMatch(packageJson, /react-loading-skeleton|drizzle-orm|drizzle-kit/);
   assert.match(layout, /lang="en"/);
@@ -57,4 +64,28 @@ test("uses public read-only feeds and never adds persistence", async () => {
   await assert.rejects(
     access(new URL("../app/_sites-preview/SkeletonPreview.tsx", import.meta.url)),
   );
+});
+
+test("expands both routing vocabulary and signal-driven visual forms", async () => {
+  const [page, css] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  for (const kind of [
+    "SESSION PULSE",
+    "BGP SESSION OPEN",
+    "BGP NOTIFICATION",
+    "PEER STATE",
+    "ROUTE EXCHANGE",
+    "HIGH LATENCY",
+    "PAGE CREATED",
+    "CATEGORY SHIFT",
+  ]) {
+    assert.match(page, new RegExp(kind));
+  }
+
+  assert.match(page, /type SignalShape = "beam" \| "ring" \| "packet" \| "spark"/);
+  assert.match(page, /shockwavesRef/);
+  assert.match(css, /@keyframes transmit/);
 });
