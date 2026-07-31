@@ -921,11 +921,11 @@ export default function Home() {
 
     const project = (lane: number, depth: number) => {
       const time = Date.now() * 0.001;
-      const horizonY = height * (0.475 + Math.sin(time * 0.17) * 0.004);
+      const horizonY = height * (0.558 + Math.sin(time * 0.12) * 0.002);
       const perspective = Math.pow(depth, 1.92);
       return {
         x: width / 2 + lane * perspective * width * 0.62,
-        y: horizonY + perspective * height * 0.61,
+        y: horizonY + perspective * height * 0.51,
         scale: 0.11 + perspective * 2.15,
       };
     };
@@ -951,6 +951,7 @@ export default function Home() {
       alpha: number,
       code: string,
       showCode: boolean,
+      matrixTime = 0,
     ) => {
       const color = tones[tone];
       const skew = side * 0.34;
@@ -965,6 +966,34 @@ export default function Home() {
       context.rect(x - side / 2, y - side / 2, side, side);
       context.fill();
       context.stroke();
+
+      if (side >= 3.5) {
+        const seed = code.charCodeAt(0) + code.charCodeAt(Math.min(4, code.length - 1));
+        const fontSize = Math.max(3.8, Math.min(compact ? 6 : 9, side * 0.13));
+        const rowHeight = fontSize * 1.15;
+        const rowCount = Math.max(2, Math.min(compact ? 5 : 9, Math.ceil(side / rowHeight) + 1));
+        const columnCount = Math.max(3, Math.min(compact ? 7 : 12, Math.floor(side / (fontSize * 0.62))));
+        const matrixScroll = (matrixTime * (compact ? 7 : 12) + seed) % rowHeight;
+        context.save();
+        context.beginPath();
+        context.rect(x - side / 2 + 1, y - side / 2 + 1, side - 2, side - 2);
+        context.clip();
+        context.shadowBlur = 0;
+        context.font = `${fontSize}px monospace`;
+        context.textBaseline = "top";
+        for (let row = -1; row < rowCount; row += 1) {
+          let binary = "";
+          for (let column = 0; column < columnCount; column += 1) {
+            binary += (seed + row * 7 + column * 13 + Math.floor(matrixTime * 4)) % 3 === 0 ? "1" : "0";
+          }
+          const rowY = y - side / 2 + row * rowHeight + matrixScroll;
+          context.fillStyle = row === 1
+            ? `rgba(241,247,255,${alpha * 0.9})`
+            : `rgba(${color.rgb},${alpha * (0.32 + ((row + seed) % 3) * 0.16)})`;
+          context.fillText(binary, x - side * 0.43, rowY);
+        }
+        context.restore();
+      }
 
       context.beginPath();
       context.moveTo(x - side / 2, y - side / 2);
@@ -988,9 +1017,13 @@ export default function Home() {
 
       if (showCode) {
         context.shadowBlur = 0;
-        context.font = `${compact ? 6 : Math.max(7, Math.min(9, side * 0.28))}px monospace`;
-        context.fillStyle = `rgba(${color.rgb}, ${alpha * 0.82})`;
-        context.fillText(code.slice(0, compact ? 12 : 24), x - side / 2, y + side / 2 + 12);
+        context.strokeStyle = `rgba(${color.rgb}, ${alpha * 0.42})`;
+        context.lineWidth = Math.max(0.5, side * 0.018);
+        const scanY = y - side / 2 + ((matrixTime * 18 + side) % side);
+        context.beginPath();
+        context.moveTo(x - side / 2 + 2, scanY);
+        context.lineTo(x + side / 2 - 2, scanY);
+        context.stroke();
       }
       context.restore();
     };
@@ -1156,7 +1189,7 @@ export default function Home() {
 
     const drawImmersiveHighway = (time: number) => {
       const risk = infrastructureRiskRef.current;
-      const horizonY = height * (0.475 + Math.sin(time * 0.13) * 0.003);
+      const horizonY = height * (0.558 + Math.sin(time * 0.12) * 0.002);
       const stormStrength = 0.1 + risk / 115;
 
       context.clearRect(0, 0, width, height);
@@ -1184,16 +1217,36 @@ export default function Home() {
       context.fillStyle = horizonGlow;
       context.fillRect(0, 0, width, height);
 
-      const starCount = compact ? 34 : 96;
-      for (let index = 0; index < starCount; index += 1) {
-        const x = ((index * 83 + 17) % 997) / 997 * width;
-        const y = ((index * 47 + 31) % 431) / 431 * horizonY * 0.96;
+      const skyNodeCount = compact ? 28 : 72;
+      const skyNodes = Array.from({ length: skyNodeCount }, (_, index) => ({
+        x:
+          (((index * 83 + 17) % 997) / 997) * width +
+          Math.sin(time * 0.055 + index * 1.7) * (compact ? 2 : 5),
+        y:
+          (((index * 47 + 31) % 431) / 431) * horizonY * 0.94 +
+          Math.cos(time * 0.043 + index * 1.13) * (compact ? 1.5 : 4),
+      }));
+      for (let index = 0; index < skyNodes.length; index += 1) {
+        const node = skyNodes[index];
+        for (const offset of compact ? [5] : [5, 13]) {
+          const target = skyNodes[(index + offset) % skyNodes.length];
+          const distance = Math.hypot(target.x - node.x, target.y - node.y);
+          if (distance > width * 0.29) continue;
+          context.strokeStyle = `rgba(${index % 3 === 0 ? "151,105,255" : "87,228,255"},${
+            0.025 + (Math.sin(time * 0.23 + index) + 1) * 0.016
+          })`;
+          context.lineWidth = 0.45;
+          context.beginPath();
+          context.moveTo(node.x, node.y);
+          context.lineTo(target.x, target.y);
+          context.stroke();
+        }
         const pulse = 0.18 + (Math.sin(time * 0.7 + index * 1.91) + 1) * 0.18;
         context.fillStyle = index % 4 === 0
           ? `rgba(151,105,255,${pulse})`
           : `rgba(87,228,255,${pulse * 0.82})`;
         context.beginPath();
-        context.arc(x, y, compact ? 0.55 : 0.7 + (index % 3) * 0.22, 0, Math.PI * 2);
+        context.arc(node.x, node.y, compact ? 0.55 : 0.7 + (index % 3) * 0.22, 0, Math.PI * 2);
         context.fill();
       }
 
@@ -1245,6 +1298,41 @@ export default function Home() {
         context.shadowBlur = 0;
       }
 
+      const horizonColumns = compact ? 18 : 48;
+      for (let column = 0; column < horizonColumns; column += 1) {
+        const x = ((column + 0.5) / horizonColumns) * width;
+        const towerHeight = 4 + ((column * 29) % 31) + Math.sin(time * 0.31 + column) * 2;
+        const isStormSide = x > width * 0.66;
+        const rgb = isStormSide && risk >= 42
+          ? "255,78,93"
+          : column % 3 === 0
+            ? "151,105,255"
+            : "87,228,255";
+        const tower = context.createLinearGradient(x, horizonY - towerHeight, x, horizonY + 9);
+        tower.addColorStop(0, `rgba(${rgb},.34)`);
+        tower.addColorStop(1, `rgba(${rgb},.03)`);
+        context.strokeStyle = tower;
+        context.lineWidth = compact ? 0.7 : 1 + (column % 4) * 0.22;
+        context.beginPath();
+        context.moveTo(x, horizonY - towerHeight);
+        context.lineTo(x, horizonY + 9);
+        context.stroke();
+        if (!compact || column % 3 === 0) {
+          context.fillStyle = `rgba(${rgb},${0.22 + (Math.sin(time * 1.1 + column) + 1) * 0.13})`;
+          context.fillRect(x - 1, horizonY - towerHeight - 2, 2, 2);
+        }
+      }
+
+      const dataBands = compact ? 3 : 7;
+      context.font = `${compact ? 5 : 7}px monospace`;
+      for (let band = 0; band < dataBands; band += 1) {
+        const direction = band % 2 === 0 ? 1 : -1;
+        const x = ((time * (12 + band * 3) * direction + band * 173) % (width + 180)) - 90;
+        const y = horizonY + 11 + band * (compact ? 4 : 5);
+        context.fillStyle = `rgba(${band % 3 === 0 ? "255,190,91" : "87,228,255"},${compact ? 0.16 : 0.24})`;
+        context.fillText(`${(band * 73).toString(2).padStart(9, "0")}  ${band % 2 ? "RX" : "TX"}`, x, y);
+      }
+
       const road = context.createLinearGradient(width / 2, horizonY, width / 2, height);
       road.addColorStop(0, "rgba(26,28,74,.08)");
       road.addColorStop(0.42, "rgba(17,20,51,.31)");
@@ -1258,20 +1346,47 @@ export default function Home() {
       context.closePath();
       context.fill();
 
-      for (let lane = -6; lane <= 6; lane += 1) {
-        const upper = project(lane * 0.18, 0.012);
-        const lower = project(lane * 0.18, 1.06);
-        const laneColor = lane % 3 === 0 ? "87,228,255" : lane % 2 === 0 ? "151,105,255" : "255,190,91";
+      for (let boundary = -3.5; boundary <= 3.5; boundary += 1) {
+        const lane = boundary * 0.275;
+        const upper = project(lane, 0.012);
+        const lower = project(lane, 1.06);
+        const laneColor = Math.round(boundary) % 3 === 0
+          ? "87,228,255"
+          : Math.round(boundary) % 2 === 0
+            ? "151,105,255"
+            : "255,190,91";
         const laneGradient = context.createLinearGradient(upper.x, upper.y, lower.x, lower.y);
         laneGradient.addColorStop(0, `rgba(${laneColor},0)`);
-        laneGradient.addColorStop(0.34, `rgba(${laneColor},.18)`);
-        laneGradient.addColorStop(1, `rgba(${laneColor},${lane === 0 ? 0.72 : 0.34})`);
+        laneGradient.addColorStop(0.34, `rgba(${laneColor},.22)`);
+        laneGradient.addColorStop(1, `rgba(${laneColor},.46)`);
         context.strokeStyle = laneGradient;
-        context.lineWidth = lane === 0 ? 1.7 : 0.72;
+        context.lineWidth = 0.8;
         context.beginPath();
         context.moveTo(upper.x, upper.y);
         context.lineTo(lower.x, lower.y);
         context.stroke();
+      }
+
+      for (let laneIndex = -3; laneIndex <= 3; laneIndex += 1) {
+        const markerLane = laneIndex * 0.275;
+        for (let marker = 0; marker < (compact ? 4 : 7); marker += 1) {
+          const markerDepth = ((time * 0.075 + marker / 7 + (laneIndex + 3) * 0.035) % 1) ** 1.55;
+          const markerPoint = project(markerLane, markerDepth);
+          context.fillStyle = laneIndex % 2 === 0
+            ? `rgba(87,228,255,${0.08 + markerDepth * 0.42})`
+            : `rgba(255,190,91,${0.06 + markerDepth * 0.32})`;
+          context.beginPath();
+          context.ellipse(
+            markerPoint.x,
+            markerPoint.y,
+            Math.max(0.5, markerPoint.scale * 1.2),
+            Math.max(0.4, markerPoint.scale * 0.42),
+            0,
+            0,
+            Math.PI * 2,
+          );
+          context.fill();
+        }
       }
 
       const gridRows = compact ? 13 : 27;
@@ -1288,7 +1403,7 @@ export default function Home() {
         context.stroke();
       }
 
-      const archCount = compact ? 7 : 15;
+      const archCount = compact ? 8 : 17;
       const nodeCount = compact ? 6 : 11;
       const archFrames = Array.from({ length: archCount }, (_, archIndex) => {
         const phase = (time * 0.024 + archIndex / archCount) % 1;
@@ -1297,7 +1412,7 @@ export default function Home() {
         const left = project(-1.06, depth);
         const right = project(1.06, depth);
         const radiusX = Math.max(5, (right.x - left.x) / 2);
-        const radiusY = 8 + Math.pow(depth, 1.22) * height * 0.78;
+        const radiusY = 10 + Math.pow(depth, 1.2) * height * 0.98;
         const points = Array.from({ length: nodeCount }, (_, nodeIndex) => {
           const angle = Math.PI - nodeIndex / (nodeCount - 1) * Math.PI;
           return {
@@ -1336,6 +1451,16 @@ export default function Home() {
             context.moveTo(previousNode.x, previousNode.y);
             context.lineTo(node.x, node.y);
             context.stroke();
+
+            if ((!compact || nodeIndex % 2 === 0) && (frameIndex + nodeIndex) % 3 === 0) {
+              const transmission = (time * 0.34 + frameIndex * 0.17 + nodeIndex * 0.11) % 1;
+              const pulseX = previousNode.x + (node.x - previousNode.x) * transmission;
+              const pulseY = previousNode.y + (node.y - previousNode.y) * transmission;
+              context.fillStyle = nodeIndex % 4 === 0 ? "rgba(255,210,123,.82)" : "rgba(126,238,255,.78)";
+              context.beginPath();
+              context.arc(pulseX, pulseY, compact ? 0.75 : 1.15 + frame.depth * 0.7, 0, Math.PI * 2);
+              context.fill();
+            }
           }
 
           const pulse = 0.72 + Math.sin(time * 1.3 + frame.archIndex * 0.8 + nodeIndex) * 0.28;
@@ -1357,19 +1482,25 @@ export default function Home() {
         }
         if (packet.progress < 0) continue;
         const depth = clamp(packet.progress * (1 - packet.distance * 0.09), 0.004, 1.08);
-        const lane = packet.lane + Math.sin(time * 0.24 + packet.from) * 0.018;
+        const laneIndex = ((packet.from * 3 + packet.to) % 7) - 3;
+        const lane = laneIndex * 0.275;
         const point = project(lane, depth);
-        const previous = project(lane, clamp(depth - 0.085, 0, 1));
         const color = tones[packet.tone];
         const alpha = clamp(0.16 + depth * 0.9, 0, 1);
         const side = Math.max(3, (10 + packet.mass * 28) * point.scale * (compact ? 0.76 : 1));
 
-        context.strokeStyle = `rgba(${color.rgb},${alpha * 0.38})`;
-        context.lineWidth = Math.max(0.6, side * 0.055);
-        context.beginPath();
-        context.moveTo(previous.x, previous.y);
-        context.lineTo(point.x, point.y);
-        context.stroke();
+        const packetGlow = context.createRadialGradient(
+          point.x,
+          point.y + side * 0.58,
+          0,
+          point.x,
+          point.y + side * 0.58,
+          side * 0.95,
+        );
+        packetGlow.addColorStop(0, `rgba(${color.rgb},${alpha * 0.25})`);
+        packetGlow.addColorStop(1, `rgba(${color.rgb},0)`);
+        context.fillStyle = packetGlow;
+        context.fillRect(point.x - side, point.y, side * 2, side * 1.25);
         drawPacketCube(
           point.x,
           point.y,
@@ -1378,6 +1509,7 @@ export default function Home() {
           alpha,
           packet.code,
           depth > 0.38 && (!compact || packet.mass > 1.4),
+          time + packet.from * 0.37,
         );
       }
 

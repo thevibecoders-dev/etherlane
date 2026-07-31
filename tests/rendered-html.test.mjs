@@ -56,7 +56,7 @@ test("server-renders the Etherlane experience and metadata", async () => {
   assert.match(html, /SIGNAL SYNTH/);
   assert.match(html, /VISITORS/);
   assert.match(html, /LISTENERS/);
-  assert.match(html, /0\.3\.2/);
+  assert.match(html, /0\.3\.3/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|VibeVeilig/i);
 });
 
@@ -86,7 +86,7 @@ test("counts an anonymous live audience without persistent tracking", async () =
   const live = await heartbeat.json();
   assert.equal(live.visitors, 1);
   assert.equal(live.listeners, 1);
-  assert.equal(live.version, "0.3.2");
+  assert.equal(live.version, "0.3.3");
   assert.equal(live.ephemeral, true);
 
   const departure = await worker.fetch(
@@ -210,6 +210,15 @@ test("expands both routing vocabulary and signal-driven visual forms", async () 
   assert.match(page, /const orderedPackets/);
   assert.match(page, /packet\.progress = -0\.025/);
   assert.match(page, /visualizationRef\.current === "flow"/);
+  assert.match(page, /const matrixScroll/);
+  assert.match(page, /const skyNodes/);
+  assert.match(page, /const horizonColumns/);
+  assert.match(page, /const transmission/);
+  assert.match(page, /const laneIndex = \(\(packet\.from \* 3 \+ packet\.to\) % 7\) - 3/);
+  assert.match(page, /const lane = laneIndex \* 0\.275/);
+  assert.match(page, /height \* \(0\.558/);
+  assert.match(page, /const packetGlow/);
+  assert.doesNotMatch(page, /const previous = project\(lane/);
   assert.match(page, /seedCount = compact \? 8 : 18/);
   assert.match(page, /\(11 \+ packet\.mass \* 25\) \* point\.scale/);
   assert.match(css, /\.infrastructure-panel/);
