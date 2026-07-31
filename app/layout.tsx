@@ -29,15 +29,15 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol =
     requestHeaders.get("x-forwarded-proto") ??
     (host.startsWith("localhost") ? "http" : "https");
-  const imageUrl = new URL("/og-etherlane.png", `${protocol}://${host}`).toString();
+  const imageUrl = new URL("/og-listening-sea.png", `${protocol}://${host}`).toString();
 
   return {
-    title: "Etherlane — Stand inside the flow",
+    title: "Etherlane — Hear the living Internet",
     description:
-      "A live audiovisual observatory translating public routing, network measurements and global knowledge signals into light, motion, generative music and a changing data voice.",
+      "Enter the Listening Sea: a zero-retention live sonification of public routing, reachability, knowledge and Internet-health observations.",
     openGraph: {
-      title: "Etherlane — Stand inside the flow",
-      description: "The public internet, translated into light, motion and generative music.",
+      title: "Etherlane — Hear the living Internet",
+      description: "A live, zero-retention sonification of the public Internet.",
       type: "website",
       locale: "en_US",
       images: [
@@ -45,14 +45,14 @@ export async function generateMetadata(): Promise<Metadata> {
           url: imageUrl,
           width: 1680,
           height: 945,
-          alt: "Etherlane — a luminous highway of public internet signals",
+          alt: "Etherlane — the Listening Sea, with live public Internet observations becoming light and ripples",
         },
       ],
     },
     twitter: {
       card: "summary_large_image",
-      title: "Etherlane — Stand inside the flow",
-      description: "The public internet, translated into light, motion and generative music.",
+      title: "Etherlane — Hear the living Internet",
+      description: "A live, zero-retention sonification of the public Internet.",
       images: [imageUrl],
     },
   };

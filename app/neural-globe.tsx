@@ -317,7 +317,7 @@ export function NeuralGlobeScene({
     );
 
     const topology = landTopology as unknown as Topology;
-    const coastline = topologyMesh(topology, topology.objects.land);
+    const coastline = topologyMesh(topology, topology.objects.land as never);
     const continentPositions: number[] = [];
     for (const line of coastline.coordinates) {
       for (let index = 1; index < line.length; index += 1) {

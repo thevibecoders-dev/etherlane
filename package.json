@@ -1,6 +1,6 @@
 {
   "name": "etherlane",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -9,7 +9,7 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/synth-mapping.test.mjs",
+    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/listening-sea.test.mjs tests/synth-mapping.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
   "dependencies": {
