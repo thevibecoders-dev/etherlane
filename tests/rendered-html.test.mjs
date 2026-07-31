@@ -52,7 +52,7 @@ test("server-renders the Etherlane experience and metadata", async () => {
   assert.match(html, /SIGNAL SYNTH/);
   assert.match(html, /VISITORS/);
   assert.match(html, /LISTENERS/);
-  assert.match(html, /0\.1\.0/);
+  assert.match(html, /0\.2\.0/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|VibeVeilig/i);
 });
 
@@ -82,7 +82,7 @@ test("counts an anonymous live audience without persistent tracking", async () =
   const live = await heartbeat.json();
   assert.equal(live.visitors, 1);
   assert.equal(live.listeners, 1);
-  assert.equal(live.version, "0.1.0");
+  assert.equal(live.version, "0.2.0");
   assert.equal(live.ephemeral, true);
 
   const departure = await worker.fetch(
@@ -249,9 +249,11 @@ test("ships an immersive generative synth without recording or persistence", asy
   assert.match(math, /padChordForHealth/);
   assert.match(math, /rhythmStepFor/);
   assert.match(math, /modulationForSignal/);
-  assert.match(math, /melodicDegreeFor/);
   assert.match(math, /phraseSeed/);
-  assert.match(math, /const progression = \[0, 3, 5, 1, 4, 2, 6/);
+  assert.match(math, /const harmonics = \[root, root \+ 12, root \+ 19/);
+  assert.match(math, /octave:\s*0/);
+  assert.match(math, /pitchCents:\s*0/);
+  assert.doesNotMatch(engine, /this\.modulation\.(octave|pitchCents)/);
   assert.match(math, /label:\s*"EDM"/);
   assert.match(math, /label:\s*"TECHNO"/);
   assert.match(math, /label:\s*"IDM"/);
@@ -269,6 +271,7 @@ test("ships an immersive generative synth without recording or persistence", asy
     "PROCEDURAL DRUM MACHINE",
     "KICK LIGHT",
     "Live data modulation matrix",
+    "GROUND",
   ]) {
     assert.match(page, new RegExp(control));
   }

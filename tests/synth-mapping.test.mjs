@@ -10,7 +10,6 @@ import {
   binauralPair,
   clamp,
   ensembleDetune,
-  melodicDegreeFor,
   midiToFrequency,
   modulationForSignal,
   padChordForHealth,
@@ -84,15 +83,12 @@ test("binaural pairs preserve carrier centre and exact beat difference", () => {
   }
 });
 
-test("pad harmony evolves while remaining inside the selected scale", () => {
-  const chords = Array.from({ length: 6 }, (_, step) =>
+test("pad harmony stays locked to one deep open drone", () => {
+  const chords = Array.from({ length: 24 }, (_, step) =>
     padChordForHealth(6, "dorian", "C", step),
   );
-  assert.ok(new Set(chords.map((chord) => chord.join(","))).size >= 5);
-  const allowed = new Set(scaleIntervals.dorian.map((interval) => interval % 12));
-  for (const chord of chords) {
-    for (const note of chord) assert.ok(allowed.has(note % 12));
-  }
+  assert.equal(new Set(chords.map((chord) => chord.join(","))).size, 1);
+  assert.deepEqual(chords[0], [36, 48, 55, 60, 67, 72]);
 });
 
 test("accentForSignal produces a musical, bounded voice per source", () => {
@@ -115,7 +111,7 @@ test("accentForSignal produces a musical, bounded voice per source", () => {
   }
 });
 
-test("accentForSignal lowers pitch for withdrawal/removal kinds", () => {
+test("signal meaning changes texture but never the locked accent pitch", () => {
   const announced = accentForSignal(
     { source: "RIS", kind: "ROUTE ANNOUNCED", magnitude: 50, tone: "violet", timestamp: 0 },
     "aeolian",
@@ -126,7 +122,14 @@ test("accentForSignal lowers pitch for withdrawal/removal kinds", () => {
     "aeolian",
     "D",
   );
-  assert.ok(withdrawn.midi < announced.midi, "withdrawn should sit lower than announced");
+  const atlas = accentForSignal(
+    { source: "ATLAS", kind: "PING RETURNED", magnitude: 88, tone: "cyan", timestamp: 0 },
+    "lydian",
+    "D",
+  );
+  assert.equal(withdrawn.midi, announced.midi);
+  assert.equal(atlas.midi, announced.midi);
+  assert.notEqual(withdrawn.release, announced.release);
 });
 
 test("ensembleDetune is symmetric and correctly sized", () => {
@@ -235,8 +238,8 @@ test("public data maps to bounded and source-specific modular synthesis targets"
     44,
   );
   for (const modulation of [route, latency, outage]) {
-    assert.ok(modulation.octave >= -1 && modulation.octave <= 1);
-    assert.ok(modulation.pitchCents >= -4 && modulation.pitchCents <= 4);
+    assert.equal(modulation.octave, 0);
+    assert.equal(modulation.pitchCents, 0);
     assert.ok(modulation.cutoff >= 240 && modulation.cutoff <= 6400);
     assert.ok(modulation.feedback >= 0.12 && modulation.feedback <= 0.42);
     assert.ok(modulation.delay >= 0.06 && modulation.delay <= 0.46);
@@ -249,16 +252,4 @@ test("public data maps to bounded and source-specific modular synthesis targets"
     modulationForSignal({ ...base, source: "RIS" }, 44),
     modulationForSignal({ ...base, source: "RIS" }, 44),
   );
-});
-
-test("data melodies evolve inside a compact musical register", () => {
-  for (const mode of ["edm", "techno", "idm"]) {
-    const degrees = Array.from({ length: 256 }, (_, step) =>
-      melodicDegreeFor(mode, step, 91827),
-    );
-    assert.ok(degrees.every((degree) => Number.isInteger(degree)));
-    assert.ok(Math.min(...degrees) >= 0);
-    assert.ok(Math.max(...degrees) <= 9);
-    assert.ok(new Set(degrees).size >= 6, `${mode} should still evolve melodically`);
-  }
 });

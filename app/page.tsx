@@ -689,8 +689,7 @@ export default function Home() {
       voiceDensityRef.current === "dream"
         ? 0.68 + clamp(event.magnitude / 100, 0, 1) * 0.12
         : 0.82 + clamp(event.magnitude / 100, 0, 1) * 0.22;
-    utterance.pitch =
-      event.tone === "coral" ? 0.97 : event.tone === "cyan" ? 1.02 : event.tone === "amber" ? 0.99 : 1;
+    utterance.pitch = 1;
     utterance.volume = 0.42 + intensityRef.current * 0.48;
     voiceSpaceRef.current?.playTexture(event.tone, event.magnitude, voiceSpaceAmountRef.current);
     window.speechSynthesis.speak(utterance);
@@ -2466,7 +2465,7 @@ export default function Home() {
                 </p>
                 <div className="data-modulation-grid" aria-label="Live data modulation matrix">
                   <span><small>VOICE</small><strong>{synthFrame.modulation.voice}</strong></span>
-                  <span><small>OCTAVE</small><strong>{synthFrame.modulation.octave > 0 ? "+" : ""}{synthFrame.modulation.octave}</strong></span>
+                  <span><small>GROUND</small><strong>{synthFrame.chord.split(" ")[0] || "LOCKED"}</strong></span>
                   <span><small>CUTOFF</small><strong>{Math.round(synthFrame.modulation.cutoff)} HZ</strong></span>
                   <span><small>ECHO</small><strong>{Math.round(synthFrame.modulation.delay * 100)}%</strong></span>
                   <span><small>HALL</small><strong>{Math.round(synthFrame.modulation.reverb * 100)}%</strong></span>

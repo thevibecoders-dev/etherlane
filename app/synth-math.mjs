@@ -192,24 +192,21 @@ export function modulationForSignal(signal, sequence = 0) {
   );
   const magnitude = clamp(Number(signal.magnitude) / 100, 0, 1);
   const sourceBias = {
-    RIS: { register: -1, cutoff: -520, delay: 0.08, reverb: 0.04, density: 0.06 },
-    ATLAS: { register: 1, cutoff: 1350, delay: 0.2, reverb: 0.02, density: 0.03 },
-    WIKIMEDIA: { register: 0, cutoff: 420, delay: 0.1, reverb: 0.22, density: -0.02 },
-    GITHUB: { register: 1, cutoff: 920, delay: 0.16, reverb: 0.08, density: 0.08 },
-    HACKERNEWS: { register: 0, cutoff: 180, delay: 0.24, reverb: 0.12, density: 0.11 },
-    BLOCKCHAIN: { register: -1, cutoff: -260, delay: 0.12, reverb: 0.16, density: 0.05 },
-    INFRASTRUCTURE: { register: -1, cutoff: -780, delay: 0.18, reverb: 0.28, density: 0.16 },
-    SYNTHETIC: { register: 0, cutoff: 0, delay: 0.12, reverb: 0.16, density: 0 },
+    RIS: { cutoff: -520, delay: 0.08, reverb: 0.04, density: 0.06 },
+    ATLAS: { cutoff: 1350, delay: 0.2, reverb: 0.02, density: 0.03 },
+    WIKIMEDIA: { cutoff: 420, delay: 0.1, reverb: 0.22, density: -0.02 },
+    GITHUB: { cutoff: 920, delay: 0.16, reverb: 0.08, density: 0.08 },
+    HACKERNEWS: { cutoff: 180, delay: 0.24, reverb: 0.12, density: 0.11 },
+    BLOCKCHAIN: { cutoff: -260, delay: 0.12, reverb: 0.16, density: 0.05 },
+    INFRASTRUCTURE: { cutoff: -780, delay: 0.18, reverb: 0.28, density: 0.16 },
+    SYNTHETIC: { cutoff: 0, delay: 0.12, reverb: 0.16, density: 0 },
   }[signal.source];
   const voices = ["SUB", "FOLD", "FM", "GLASS", "AIR", "PULSE"];
   const distress = /OUTAGE|NOTIFICATION|WITHDRAWN|DEGRADED|HIGH LATENCY/.test(signal.kind);
-  // Register changes should feel like musical section changes, not random
-  // transposition. Most signals remain in the current octave.
-  const octave = (seed >>> 3) % 12 === 0 ? sourceBias.register : 0;
   return {
     seed,
-    octave: clamp(octave, -1, 1),
-    pitchCents: ((seed >>> 7) % 9) - 4,
+    octave: 0,
+    pitchCents: 0,
     voice: voices[(seed >>> 11) % voices.length],
     cutoff: clamp(680 + magnitude * 4200 + sourceBias.cutoff, 240, 6400),
     delay: clamp(0.08 + magnitude * 0.28 + sourceBias.delay, 0.06, 0.46),
@@ -219,24 +216,6 @@ export function modulationForSignal(signal, sequence = 0) {
     chordAdvance: 1 + ((seed >>> 15) % (distress ? 3 : 2)),
     driftRate: clamp(0.025 + ((seed >>> 18) % 70) / 1000, 0.025, 0.095),
   };
-}
-
-/**
- * A compact scale-degree melody for the modular data voice. Phrases evolve,
- * but stay within a singable range instead of jumping across several octaves.
- */
-export function melodicDegreeFor(mode, step, seed = 0) {
-  const motifs = {
-    edm: [0, 2, 4, 2, 5, 4, 2, 1],
-    techno: [0, 0, 3, 1, 0, 4, 2, 1],
-    idm: [0, 4, 1, 5, 2, 3, 1, 6],
-  };
-  const motif = motifs[mode] ?? motifs.edm;
-  const safeStep = Math.max(0, Math.round(step));
-  const phrase = Math.floor(safeStep / 32);
-  const phraseMotion = [0, 0, 1, 0, 2, 1, 3, 1][phrase % 8];
-  const rotation = (seed >>> 5) % motif.length;
-  return motif[(safeStep + rotation) % motif.length] + phraseMotion;
 }
 
 export function midiToFrequency(note) {
@@ -271,52 +250,22 @@ export function quantizeToScale(degreeIndex, scale, key, octaveSpan = 3) {
 }
 
 /**
- * Sustained pad chord (MIDI notes) for a given number of live feeds.
- * The evolution step moves through a slow modal progression while keeping
- * every note inside the selected scale.
+ * Stable deep drone whose fixed harmonic layers open as more feeds come live.
+ * Data changes texture and space around this floor, never its pitch.
  */
-export function padChordForHealth(liveCount, scale, key, evolutionStep = 0) {
-  const progression = [0, 3, 5, 1, 4, 2, 6, 3, 0, 5, 2, 4, 1, 6, 4, 2, 0, 3, 1, 5, 6, 2, 4, 1];
-  const normalizedStep =
-    ((Math.round(evolutionStep) % progression.length) + progression.length) % progression.length;
-  const rootDegree = progression[normalizedStep];
-  const note = (degree) => quantizeToScale(rootDegree + degree, scale, key, 5);
-  const shapes = [
-    [0, 4, 7, 9, 15, 18],
-    [0, 3, 7, 11, 14, 20],
-    [0, 5, 8, 12, 16, 21],
-    [0, 2, 6, 9, 13, 18],
-    [0, 4, 8, 10, 15, 19],
-    [0, 3, 6, 10, 14, 17],
-  ];
-  const shape = shapes[Math.floor(normalizedStep / 4) % shapes.length];
+export function padChordForHealth(liveCount, _scale, key) {
+  const root = keyRootMidi[key] - 12;
+  const harmonics = [root, root + 12, root + 19, root + 24, root + 31, root + 36];
   const available = liveCount >= 4 ? 6 : liveCount >= 3 ? 5 : liveCount === 2 ? 3 : 2;
-  const chord = shape.slice(0, available).map(note);
-  const inversion = Math.floor(normalizedStep / 3) % Math.min(3, chord.length);
-  for (let index = 0; index < inversion; index += 1) chord[index] += 12;
-  return chord.sort((a, b) => a - b);
+  return harmonics.slice(0, available);
 }
 
 /** Translate a signal into the musical parameters of one accent voice. */
-export function accentForSignal(signal, scale, key) {
-  const seed = hashText(`${signal.source}:${signal.kind}:${Math.round(signal.magnitude)}`);
-  const sourceRegister = {
-    RIS: -7, // low, structural
-    WIKIMEDIA: 0,
-    ATLAS: 7, // high, bell-like pings
-    GITHUB: 4,
-    HACKERNEWS: 2,
-    BLOCKCHAIN: -4,
-    INFRASTRUCTURE: -9,
-    SYNTHETIC: -2,
-  };
-  // ATLAS: fast return (low magnitude) => bright/high; high latency => low/dark.
-  const latencyDegree = signal.source === "ATLAS" ? Math.round((100 - signal.magnitude) / 12) : 0;
-  const baseDegree = sourceRegister[signal.source] + latencyDegree + (seed % 5);
+export function accentForSignal(signal, _scale, key) {
   const descending = /WITHDRAWN|NOTIFICATION|REMOVED|HIGH LATENCY|OUTAGE|DEGRADED|ROOT CONSENSUS/.test(signal.kind);
-  // +7 keeps accents above the pad root; withdrawals/notifications drop a full
-  // octave so they always read as "something left" regardless of hash jitter.
-  const midi = quantizeToScale(baseDegree + 7, scale, key) - (descending ? 12 : 0);
+  // Every packet floats on the same open fifth above the deep root. Meaning is
+  // carried by envelope, stereo position, timbre and space instead of pitch.
+  const midi = keyRootMidi[key] + 7;
   const velocity = clamp(0.16 + signal.magnitude / 190, 0.16, 0.7);
   const attack =
     signal.source === "ATLAS"
