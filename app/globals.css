@@ -310,6 +310,117 @@ button {
   line-height: 1.6;
 }
 
+.weather-hud {
+  width: min(520px, 54vw);
+  margin: 25px 0 0 4px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  background:
+    linear-gradient(90deg, rgba(87, 228, 255, 0.045), transparent 38%),
+    rgba(5, 6, 11, 0.52);
+  backdrop-filter: blur(13px);
+}
+
+.weather-hud.pressure-high {
+  border-color: rgba(255, 100, 105, 0.38);
+  background:
+    linear-gradient(90deg, rgba(255, 100, 105, 0.12), transparent 52%),
+    rgba(11, 3, 7, 0.66);
+}
+
+.weather-heading {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px 18px;
+  padding: 11px 13px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.weather-heading span {
+  grid-column: 1 / -1;
+  color: rgba(241, 239, 249, 0.36);
+  font-size: 6px;
+  letter-spacing: 0.16em;
+}
+
+.weather-heading strong {
+  overflow: hidden;
+  color: var(--cyan);
+  font-size: 9px;
+  font-weight: 560;
+  letter-spacing: 0.12em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pressure-high .weather-heading strong,
+.pressure-high .weather-heading small {
+  color: var(--coral);
+}
+
+.weather-heading small {
+  color: rgba(241, 239, 249, 0.52);
+  font-size: 6px;
+  letter-spacing: 0.13em;
+}
+
+.sonification-map {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.sonification-map > div {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: 9px 10px 10px;
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.sonification-map > div:last-child {
+  border-right: 0;
+}
+
+.sonification-map span {
+  color: rgba(241, 239, 249, 0.34);
+  font-size: 5px;
+  letter-spacing: 0.14em;
+}
+
+.sonification-map strong {
+  overflow: hidden;
+  color: rgba(241, 239, 249, 0.72);
+  font-size: 6px;
+  font-weight: 540;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+}
+
+.sonification-map i {
+  position: relative;
+  height: 1px;
+  margin-top: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.sonification-map i::after {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--level);
+  background: linear-gradient(90deg, var(--violet), var(--cyan));
+  box-shadow: 0 0 8px var(--cyan);
+  content: "";
+}
+
+.pressure-high .sonification-map i::after {
+  background: linear-gradient(90deg, var(--amber), var(--coral));
+  box-shadow: 0 0 8px var(--coral);
+}
+
 .visualizer-switch {
   position: absolute;
   z-index: 4;
@@ -2190,6 +2301,32 @@ button {
     margin-top: 20px;
     font-size: 11px;
     line-height: 1.55;
+  }
+
+  .weather-hud {
+    width: 100%;
+    margin: 18px 0 0;
+    backdrop-filter: blur(8px);
+  }
+
+  .weather-heading {
+    padding: 9px 10px 8px;
+  }
+
+  .sonification-map {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .sonification-map > div {
+    padding: 8px 9px 9px;
+  }
+
+  .sonification-map > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .sonification-map > div:nth-child(-n + 2) {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   }
 
   .horizon-lockup {

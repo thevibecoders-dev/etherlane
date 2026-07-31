@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   binauralPresets,
   defaultSynthSettings,
@@ -85,6 +85,8 @@ type VisualPacket = {
   code: string;
   progress: number;
   speed: number;
+  mass: number;
+  distance: number;
   lane: number;
   from: number;
   to: number;
@@ -132,9 +134,9 @@ const sourceKeys: Array<keyof SourceHealth> = [
 ];
 
 const visualizations: Array<{ value: VisualizationMode; label: string; hint: string }> = [
-  { value: "flow", label: "FLOW", hint: "Signal highway" },
-  { value: "neural", label: "NEURAL", hint: "Node transmission" },
-  { value: "matrix", label: "MATRIX", hint: "Packet code rain" },
+  { value: "flow", label: "HIGHWAY", hint: "Packet traffic in perspective" },
+  { value: "neural", label: "ROUTES", hint: "Living autonomous-system architecture" },
+  { value: "matrix", label: "WEATHER", hint: "Code rain and network pressure" },
 ];
 
 const tones: Record<SignalTone, { rgb: string; hex: string }> = {
@@ -320,27 +322,27 @@ function voiceQualityScore(voice: SpeechSynthesisVoice) {
 
 function dreamPhraseFor(event: SignalEvent) {
   const explicit: Array<[RegExp, string]> = [
-    [/OUTAGE|NOTIFICATION/, "signal fracture"],
-    [/WITHDRAWN|DELETED|REMOVED/, "path fading"],
-    [/ROOT/, "deep roots shifting"],
-    [/PING|LATENCY/, "distant echo"],
-    [/ROUTE|PATH|PEER|SESSION/, "new paths"],
-    [/PAGE|KNOWLEDGE/, "knowledge blooming"],
-    [/CODE|RELEASE|REFERENCE/, "code awakening"],
-    [/THREAD|CONVERSATION|ITEM/, "voices gathering"],
-    [/BLOCK|TRANSACTION|LEDGER/, "the ledger turns"],
-    [/NOMINAL|OPERATIONAL/, "all is flowing"],
+    [/OUTAGE|NOTIFICATION/, "a storm forms at the horizon"],
+    [/WITHDRAWN|DELETED|REMOVED/, "one road closes"],
+    [/ROOT/, "the deep roots are holding"],
+    [/PING|LATENCY/, "distance becomes audible"],
+    [/ROUTE|PATH|PEER|SESSION/, "a new road appears"],
+    [/PAGE|KNOWLEDGE/, "knowledge crosses the lane"],
+    [/CODE|RELEASE|REFERENCE/, "code passes in the distance"],
+    [/THREAD|CONVERSATION|ITEM/, "public voices travel"],
+    [/BLOCK|TRANSACTION|LEDGER/, "the ledger moves downstream"],
+    [/NOMINAL|OPERATIONAL/, "the weather is clear"],
   ];
   const matched = explicit.find(([pattern]) => pattern.test(event.kind));
   const pools: Record<SignalSource, string[]> = {
-    RIS: ["routes breathing", "a path opens", "distant crossings"],
-    ATLAS: ["soft return", "across the distance", "echo received"],
-    WIKIMEDIA: ["memory growing", "words become light", "knowledge drifting"],
-    GITHUB: ["code in motion", "a branch unfolds", "new shapes"],
-    HACKERNEWS: ["voices in the wire", "ideas gathering", "the network wonders"],
-    BLOCKCHAIN: ["the ledger turns", "another block", "time recorded"],
-    INFRASTRUCTURE: ["the core is listening", "deep network pulse", "roots holding"],
-    SYNTHETIC: ["between signals", "soft static", "the ether dreams"],
+    RIS: ["routes are breathing", "a path opens", "traffic changes direction"],
+    ATLAS: ["a distant return", "latency adds depth", "an echo crosses the world"],
+    WIKIMEDIA: ["memory in transit", "words pass like light", "knowledge is moving"],
+    GITHUB: ["code in motion", "a branch enters the stream", "software crosses the lane"],
+    HACKERNEWS: ["voices in the wire", "ideas gather at an interchange", "the network wonders"],
+    BLOCKCHAIN: ["the ledger advances", "another block passes", "time is recorded"],
+    INFRASTRUCTURE: ["the core is listening", "pressure at a major junction", "roots beneath the road"],
+    SYNTHETIC: ["between two signals", "soft road noise", "the ether keeps moving"],
   };
   const options = pools[event.source];
   const seed =
@@ -349,21 +351,21 @@ function dreamPhraseFor(event: SignalEvent) {
     Math.floor(event.timestamp / 1000);
   const beginnings = [
     "listen",
-    "slowly",
-    "beneath the noise",
-    "inside the current",
-    "across the ether",
-    "somewhere in the flow",
-    "between one pulse and the next",
+    "look ahead",
+    "beneath the road noise",
+    "inside the traffic",
+    "at the horizon",
+    "somewhere in the stream",
+    "between one packet and the next",
   ];
   const endings = [
-    "opening into distance",
-    "drifting without edges",
+    "moving into distance",
+    "passing the observer",
     "returning as light",
-    "moving through the dark",
-    "becoming another path",
-    "still changing",
-    "and dissolving again",
+    "crossing through the dark",
+    "becoming part of the road",
+    "the traffic continues",
+    "then disappearing from view",
   ];
   const core = matched?.[1] ?? options[Math.abs(seed) % options.length];
   return `${beginnings[Math.abs(seed >>> 2) % beginnings.length]}... ${core}... ${
@@ -749,7 +751,14 @@ export default function Home() {
           tone: event.source === "INFRASTRUCTURE" && event.magnitude >= 70 ? "coral" : event.tone,
           code: packetCode(complete),
           progress: copy * -0.055,
-          speed: compact ? 0.012 : 0.008 + event.magnitude / 22000,
+          speed:
+            (compact ? 0.011 : 0.0075 + event.magnitude / 24000) *
+            (event.source === "ATLAS" ? 0.72 : 1),
+          mass: 0.72 + clamp(event.magnitude / 58, 0, 1.8),
+          distance:
+            event.source === "ATLAS"
+              ? clamp(0.28 + event.magnitude / 115, 0.28, 1)
+              : clamp(0.12 + routeLength / 8, 0.12, 0.88),
           lane: (Math.random() - 0.5) * 1.7,
           from: route[0],
           to: route.at(-1) ?? route[0],
@@ -894,6 +903,71 @@ export default function Home() {
       };
     };
 
+    const quadraticPoint = (
+      from: { x: number; y: number },
+      control: { x: number; y: number },
+      to: { x: number; y: number },
+      progress: number,
+    ) => {
+      const inverse = 1 - progress;
+      return {
+        x: inverse * inverse * from.x + 2 * inverse * progress * control.x + progress * progress * to.x,
+        y: inverse * inverse * from.y + 2 * inverse * progress * control.y + progress * progress * to.y,
+      };
+    };
+
+    const drawPacketCube = (
+      x: number,
+      y: number,
+      side: number,
+      tone: SignalTone,
+      alpha: number,
+      code: string,
+      showCode: boolean,
+    ) => {
+      const color = tones[tone];
+      const skew = side * 0.34;
+      context.save();
+      context.shadowColor = color.hex;
+      context.shadowBlur = compact ? 0 : side * 1.5;
+      context.fillStyle = `rgba(${color.rgb}, ${alpha * 0.15})`;
+      context.strokeStyle = `rgba(${color.rgb}, ${alpha * 0.86})`;
+      context.lineWidth = Math.max(0.6, side * 0.055);
+
+      context.beginPath();
+      context.rect(x - side / 2, y - side / 2, side, side);
+      context.fill();
+      context.stroke();
+
+      context.beginPath();
+      context.moveTo(x - side / 2, y - side / 2);
+      context.lineTo(x - side / 2 + skew, y - side / 2 - skew);
+      context.lineTo(x + side / 2 + skew, y - side / 2 - skew);
+      context.lineTo(x + side / 2, y - side / 2);
+      context.closePath();
+      context.fillStyle = `rgba(${color.rgb}, ${alpha * 0.09})`;
+      context.fill();
+      context.stroke();
+
+      context.beginPath();
+      context.moveTo(x + side / 2, y - side / 2);
+      context.lineTo(x + side / 2 + skew, y - side / 2 - skew);
+      context.lineTo(x + side / 2 + skew, y + side / 2 - skew);
+      context.lineTo(x + side / 2, y + side / 2);
+      context.closePath();
+      context.fillStyle = `rgba(${color.rgb}, ${alpha * 0.06})`;
+      context.fill();
+      context.stroke();
+
+      if (showCode) {
+        context.shadowBlur = 0;
+        context.font = `${compact ? 6 : Math.max(7, Math.min(9, side * 0.28))}px monospace`;
+        context.fillStyle = `rgba(${color.rgb}, ${alpha * 0.82})`;
+        context.fillText(code.slice(0, compact ? 12 : 24), x - side / 2, y + side / 2 + 12);
+      }
+      context.restore();
+    };
+
     const drawNeural = (time: number) => {
       const risk = infrastructureRiskRef.current;
       context.fillStyle = risk >= 60 ? "rgba(18, 1, 5, 0.24)" : "rgba(3, 4, 9, 0.3)";
@@ -933,8 +1007,21 @@ export default function Home() {
         context.beginPath();
         packet.route.forEach((nodeIndex, routeIndex) => {
           const node = nodes[nodeIndex % nodes.length];
-          if (routeIndex === 0) context.moveTo(node.x * width, node.y * height);
-          else context.lineTo(node.x * width, node.y * height);
+          if (routeIndex === 0) {
+            context.moveTo(node.x * width, node.y * height);
+            return;
+          }
+          const previous = nodes[packet.route[routeIndex - 1] % nodes.length];
+          const fromX = previous.x * width;
+          const fromY = previous.y * height;
+          const toX = node.x * width;
+          const toY = node.y * height;
+          context.quadraticCurveTo(
+            (fromX + toX) / 2,
+            Math.min(fromY, toY) - height * (0.035 + packet.distance * 0.08),
+            toX,
+            toY,
+          );
         });
         context.stroke();
       }
@@ -959,8 +1046,19 @@ export default function Home() {
         const segmentProgress = routeProgress - routeIndex;
         const from = nodes[packet.route[routeIndex] % nodes.length];
         const to = nodes[packet.route[Math.min(routeIndex + 1, packet.route.length - 1)] % nodes.length];
-        const x = (from.x + (to.x - from.x) * segmentProgress) * width;
-        const y = (from.y + (to.y - from.y) * segmentProgress) * height;
+        const fromPoint = { x: from.x * width, y: from.y * height };
+        const toPoint = { x: to.x * width, y: to.y * height };
+        const routePoint = quadraticPoint(
+          fromPoint,
+          {
+            x: (fromPoint.x + toPoint.x) / 2,
+            y: Math.min(fromPoint.y, toPoint.y) - height * (0.035 + packet.distance * 0.08),
+          },
+          toPoint,
+          segmentProgress,
+        );
+        const x = routePoint.x;
+        const y = routePoint.y;
         const color = tones[packet.tone];
         context.fillStyle = color.hex;
         context.beginPath();
@@ -1005,6 +1103,25 @@ export default function Home() {
         context.fillStyle = `rgba(${color.rgb}, .24)`;
         context.fillText("10110100 01101001", x, y - 15);
         context.fillText("00101101 11000010", x, y - 30);
+      }
+      if (risk >= 42) {
+        const stormBands = compact ? 3 : 6;
+        for (let band = 0; band < stormBands; band += 1) {
+          const stormY = height * (0.15 + band * 0.11) + Math.sin(time * (0.32 + band * 0.04)) * 18;
+          context.strokeStyle = `rgba(255,100,105,${0.025 + risk / 1250})`;
+          context.lineWidth = 1 + risk / 55;
+          context.beginPath();
+          context.moveTo(-30, stormY);
+          context.bezierCurveTo(
+            width * 0.32,
+            stormY - 45,
+            width * 0.64,
+            stormY + 54,
+            width + 30,
+            stormY - 8,
+          );
+          context.stroke();
+        }
       }
       visualPacketsRef.current = visualPacketsRef.current.filter((packet) => packet.progress <= 1.08);
       context.restore();
@@ -1155,6 +1272,33 @@ export default function Home() {
         }
         context.fill();
       }
+
+      for (const packet of visualPacketsRef.current) {
+        if (!pausedRef.current) packet.progress += packet.speed * (0.78 + intensityRef.current * 0.004);
+        if (packet.progress < 0) continue;
+        const depth = clamp(packet.progress * (1 - packet.distance * 0.12), 0.006, 1.08);
+        const point = project(packet.lane, depth);
+        const alpha = clamp(0.14 + depth * 0.88, 0, 1);
+        const side = Math.max(2.2, (4.2 + packet.mass * 5.4) * point.scale);
+        const trailStart = project(packet.lane, clamp(depth - 0.075 - packet.distance * 0.025, 0, 1));
+        const color = tones[packet.tone];
+        context.strokeStyle = `rgba(${color.rgb}, ${alpha * 0.24})`;
+        context.lineWidth = Math.max(0.55, side * 0.06);
+        context.beginPath();
+        context.moveTo(trailStart.x, trailStart.y);
+        context.lineTo(point.x, point.y);
+        context.stroke();
+        drawPacketCube(
+          point.x,
+          point.y,
+          side,
+          packet.tone,
+          alpha,
+          packet.code,
+          depth > 0.52 && (!compact || packet.mass > 1.45),
+        );
+      }
+      visualPacketsRef.current = visualPacketsRef.current.filter((packet) => packet.progress <= 1.08);
 
       for (const wave of shockwavesRef.current) {
         if (!pausedRef.current) {
@@ -1758,6 +1902,40 @@ export default function Home() {
     return "SYNTHETIC FALLBACK";
   }, [sourceHealth]);
 
+  const internetWeather = useMemo(() => {
+    const liveSources = sourceKeys.filter((source) => sourceHealth[source] === "live").length;
+    const offlineSources = sourceKeys.filter((source) => sourceHealth[source] === "offline").length;
+    const recent = events.slice(0, 12);
+    const averageMagnitude = recent.length
+      ? recent.reduce((total, event) => total + event.magnitude, 0) / recent.length
+      : 18;
+    const atlasEvents = recent.filter((event) => event.source === "ATLAS");
+    const latencyDepth = atlasEvents.length
+      ? atlasEvents.reduce((total, event) => total + event.magnitude, 0) / atlasEvents.length
+      : 24;
+    const routeFlux = recent.filter((event) => event.source === "RIS").length;
+    const pressure = clamp(
+      infrastructure.risk * 0.74 + offlineSources * 5 + averageMagnitude * 0.16,
+      0,
+      100,
+    );
+    const state =
+      pressure >= 70
+        ? "INFRASTRUCTURE STORM"
+        : pressure >= 42
+          ? "ROUTE TURBULENCE"
+          : pressure >= 22
+            ? "ACTIVE CURRENT"
+            : "CLEAR FLOW";
+    return {
+      state,
+      pressure: Math.round(pressure),
+      density: Math.round(clamp(18 + recent.length * 4 + averageMagnitude * 0.34, 0, 100)),
+      depth: Math.round(clamp(latencyDepth, 0, 100)),
+      flux: Math.round(clamp(routeFlux * 17 + liveSources * 3, 0, 100)),
+    };
+  }, [events, infrastructure.risk, sourceHealth]);
+
   const latest = events[0];
   const activeVoiceName =
     voiceEngine === "piper"
@@ -1814,19 +1992,32 @@ export default function Home() {
 
       <section id="experience" className="experience" aria-label="Live internet signal experience">
         <div className="hero-copy">
-          <p className="eyebrow">PUBLIC INTERNET OBSERVATORY / LIVE</p>
+          <p className="eyebrow">INTERNET WEATHER OBSERVATORY / LIVE</p>
           <h1>
             STAND INSIDE
-            <span>THE FLOW.</span>
+            <span>THE INTERNET.</span>
           </h1>
           <p className="hero-intro">
-            Routes shift. Measurements return. Code, knowledge, conversations and public ledger
-            packets cross the network. The invisible internet becomes light, motion and sound.
+            Public signals become packet traffic, route architecture and weather. No payloads. No
+            surveillance. Only the shape of the flow, translated into light, space and sound.
           </p>
+          <div className={`weather-hud pressure-${internetWeather.pressure >= 70 ? "high" : "normal"}`}>
+            <div className="weather-heading">
+              <span>NOW OVER THE NETWORK</span>
+              <strong>{internetWeather.state}</strong>
+              <small>{internetWeather.pressure}% PRESSURE</small>
+            </div>
+            <div className="sonification-map" aria-label="Live data translation">
+              <div><span>LATENCY</span><strong>DISTANCE</strong><i style={{ "--level": `${internetWeather.depth}%` } as CSSProperties} /></div>
+              <div><span>VOLUME</span><strong>DENSITY</strong><i style={{ "--level": `${internetWeather.density}%` } as CSSProperties} /></div>
+              <div><span>ROUTES</span><strong>ARCHITECTURE</strong><i style={{ "--level": `${internetWeather.flux}%` } as CSSProperties} /></div>
+              <div><span>OUTAGES</span><strong>WEATHER</strong><i style={{ "--level": `${internetWeather.pressure}%` } as CSSProperties} /></div>
+            </div>
+          </div>
         </div>
 
         <div className="visualizer-switch" aria-label="Choose visualization">
-          <span>VISUAL FIELD</span>
+          <span>OBSERVATION MODE</span>
           <div>
             {visualizations.map((option) => (
               <button
@@ -2581,20 +2772,22 @@ export default function Home() {
                 <span>01</span>
                 <h3>WHAT YOU SEE</h3>
                 <p>
-                  Six public signal families and a live infrastructure-health channel become a
-                  flowing highway, a moving neural network or matrix-like packet code. Every
-                  message forms a fresh multi-hop path. Mobile uses a lighter 24-frame profile.
+                  Public signals become physical packet cubes on an infinite highway. Latency
+                  creates distance, traffic creates density, routing changes build new
+                  architecture and infrastructure disruption becomes red network weather. Switch
+                  between the highway, living routes and matrix-like weather. Mobile uses a
+                  lighter 24-frame profile.
                 </p>
               </section>
               <section>
                 <span>02</span>
                 <h3>WHAT YOU HEAR</h3>
                 <p>
-                  An evolving ambient pad moves gradually through the selected scale while routing,
-                  latency, code, conversation, ledger and infrastructure events add spatial
-                  voices. Piper neural speech can use full signal descriptions or sparse dream
-                  phrases, passing through true convolution reverb. Optional binaural modes place
-                  a different carrier in each ear for a headphone meditation field.
+                  One stable deep ground tone anchors the world. Routing, latency, code,
+                  conversation, ledger and infrastructure events change spectral colour, mass,
+                  space and rhythm without uncontrolled pitch jumps. A sparse observer voice names
+                  what passes. Optional binaural modes place a different carrier in each ear for a
+                  headphone meditation field.
                 </p>
               </section>
               <section>
@@ -2609,7 +2802,7 @@ export default function Home() {
               </section>
             </div>
             <button className="enter-button" type="button" onClick={() => setShowAbout(false)}>
-              RETURN TO THE FLOW
+              RETURN TO THE OBSERVATORY
             </button>
           </article>
         </div>
