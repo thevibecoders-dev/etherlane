@@ -56,7 +56,7 @@ test("server-renders the Etherlane experience and metadata", async () => {
   assert.match(html, /SIGNAL SYNTH/);
   assert.match(html, /VISITORS/);
   assert.match(html, /LISTENERS/);
-  assert.match(html, /0\.3\.0/);
+  assert.match(html, /0\.3\.1/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|VibeVeilig/i);
 });
 
@@ -86,7 +86,7 @@ test("counts an anonymous live audience without persistent tracking", async () =
   const live = await heartbeat.json();
   assert.equal(live.visitors, 1);
   assert.equal(live.listeners, 1);
-  assert.equal(live.version, "0.3.0");
+  assert.equal(live.version, "0.3.1");
   assert.equal(live.ephemeral, true);
 
   const departure = await worker.fetch(
@@ -188,7 +188,7 @@ test("expands both routing vocabulary and signal-driven visual forms", async () 
   assert.match(page, /quadraticCurveTo/);
   assert.match(page, /mass:\s*0\.72/);
   assert.match(page, /event\.source === "ATLAS"/);
-  assert.match(page, /INTERNET WEATHER OBSERVATORY/);
+  assert.match(page, /LIVE AUDIOVISUAL INTERNET OBSERVATORY/);
   assert.match(page, /Latency[\s\S]*distance/i);
   assert.match(page, /traffic[\s\S]*density/i);
   assert.match(page, /routing[\s\S]*architecture/i);
@@ -204,6 +204,10 @@ test("expands both routing vocabulary and signal-driven visual forms", async () 
   assert.match(css, /\.visualizer-switch/);
   assert.match(css, /\.weather-hud/);
   assert.match(css, /\.sonification-map/);
+  assert.match(css, /background-image:\s*url\("\/og\.png"\)/);
+  assert.match(css, /background-size:\s*auto 165%/);
+  assert.match(page, /seedCount = compact \? 8 : 18/);
+  assert.match(page, /\(11 \+ packet\.mass \* 25\) \* point\.scale/);
   assert.match(css, /\.infrastructure-panel/);
   assert.match(css, /\.etherlane-shell\.is-disrupted/);
   assert.match(css, /@keyframes distress-background/);

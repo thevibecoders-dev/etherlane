@@ -877,6 +877,33 @@ export default function Home() {
       });
     }
 
+    if (visualPacketsRef.current.length === 0) {
+      const seedCount = compact ? 8 : 18;
+      for (let index = 0; index < seedCount; index += 1) {
+        const route = Array.from(
+          { length: 3 + (index % 4) },
+          (_, routeIndex) => (index * 7 + routeIndex * 11) % nodes.length,
+        );
+        visualPacketsRef.current.push({
+          tone: (["cyan", "violet", "amber"] as SignalTone[])[index % 3],
+          code: `IP:${(index * 73).toString(16).toUpperCase().padStart(3, "0")} ${(
+            0b10110100 ^ (index * 17)
+          )
+            .toString(2)
+            .slice(-8)
+            .padStart(8, "0")}`,
+          progress: (index / seedCount) * 0.96,
+          speed: 0.0048 + (index % 5) * 0.00055,
+          mass: 0.82 + (index % 4) * 0.46,
+          distance: 0.18 + (index % 5) * 0.14,
+          lane: ((index % 7) - 3) * 0.27 + (index % 2 ? 0.08 : -0.08),
+          from: route[0],
+          to: route.at(-1) ?? route[0],
+          route,
+        });
+      }
+    }
+
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
       width = Math.max(1, rect.width);
@@ -894,12 +921,12 @@ export default function Home() {
 
     const project = (lane: number, depth: number) => {
       const time = Date.now() * 0.001;
-      const horizonY = height * (0.405 + Math.sin(time * 0.17) * 0.006);
-      const perspective = Math.pow(depth, 1.7);
+      const horizonY = height * (0.475 + Math.sin(time * 0.17) * 0.004);
+      const perspective = Math.pow(depth, 1.92);
       return {
-        x: width / 2 + lane * perspective * width * 0.48,
-        y: horizonY + perspective * height * 0.66,
-        scale: 0.16 + perspective * 1.7,
+        x: width / 2 + lane * perspective * width * 0.62,
+        y: horizonY + perspective * height * 0.61,
+        scale: 0.11 + perspective * 2.15,
       };
     };
 
@@ -1144,7 +1171,7 @@ export default function Home() {
       }
       context.clearRect(0, 0, width, height);
       const infrastructureRisk = infrastructureRiskRef.current;
-      const horizonY = height * (0.405 + Math.sin(time * 0.17) * 0.006);
+      const horizonY = height * (0.475 + Math.sin(time * 0.17) * 0.004);
 
       const glow = context.createRadialGradient(
         width / 2,
@@ -1279,7 +1306,7 @@ export default function Home() {
         const depth = clamp(packet.progress * (1 - packet.distance * 0.12), 0.006, 1.08);
         const point = project(packet.lane, depth);
         const alpha = clamp(0.14 + depth * 0.88, 0, 1);
-        const side = Math.max(2.2, (4.2 + packet.mass * 5.4) * point.scale);
+        const side = Math.max(3.2, (11 + packet.mass * 25) * point.scale);
         const trailStart = project(packet.lane, clamp(depth - 0.075 - packet.distance * 0.025, 0, 1));
         const color = tones[packet.tone];
         context.strokeStyle = `rgba(${color.rgb}, ${alpha * 0.24})`;
@@ -1992,27 +2019,28 @@ export default function Home() {
 
       <section id="experience" className="experience" aria-label="Live internet signal experience">
         <div className="hero-copy">
-          <p className="eyebrow">INTERNET WEATHER OBSERVATORY / LIVE</p>
+          <p className="eyebrow">LIVE AUDIOVISUAL INTERNET OBSERVATORY</p>
           <h1>
-            STAND INSIDE
-            <span>THE INTERNET.</span>
+            ETHERLANE
+            <span>STAND INSIDE THE INTERNET</span>
           </h1>
           <p className="hero-intro">
             Public signals become packet traffic, route architecture and weather. No payloads. No
             surveillance. Only the shape of the flow, translated into light, space and sound.
           </p>
-          <div className={`weather-hud pressure-${internetWeather.pressure >= 70 ? "high" : "normal"}`}>
-            <div className="weather-heading">
-              <span>NOW OVER THE NETWORK</span>
-              <strong>{internetWeather.state}</strong>
-              <small>{internetWeather.pressure}% PRESSURE</small>
-            </div>
-            <div className="sonification-map" aria-label="Live data translation">
-              <div><span>LATENCY</span><strong>DISTANCE</strong><i style={{ "--level": `${internetWeather.depth}%` } as CSSProperties} /></div>
-              <div><span>VOLUME</span><strong>DENSITY</strong><i style={{ "--level": `${internetWeather.density}%` } as CSSProperties} /></div>
-              <div><span>ROUTES</span><strong>ARCHITECTURE</strong><i style={{ "--level": `${internetWeather.flux}%` } as CSSProperties} /></div>
-              <div><span>OUTAGES</span><strong>WEATHER</strong><i style={{ "--level": `${internetWeather.pressure}%` } as CSSProperties} /></div>
-            </div>
+        </div>
+
+        <div className={`weather-hud pressure-${internetWeather.pressure >= 70 ? "high" : "normal"}`}>
+          <div className="weather-heading">
+            <span>NOW OVER THE NETWORK</span>
+            <strong>{internetWeather.state}</strong>
+            <small>{internetWeather.pressure}% PRESSURE</small>
+          </div>
+          <div className="sonification-map" aria-label="Live data translation">
+            <div><span>LATENCY</span><strong>DISTANCE</strong><i style={{ "--level": `${internetWeather.depth}%` } as CSSProperties} /></div>
+            <div><span>VOLUME</span><strong>DENSITY</strong><i style={{ "--level": `${internetWeather.density}%` } as CSSProperties} /></div>
+            <div><span>ROUTES</span><strong>ARCHITECTURE</strong><i style={{ "--level": `${internetWeather.flux}%` } as CSSProperties} /></div>
+            <div><span>OUTAGES</span><strong>WEATHER</strong><i style={{ "--level": `${internetWeather.pressure}%` } as CSSProperties} /></div>
           </div>
         </div>
 
