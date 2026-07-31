@@ -23,6 +23,7 @@ import {
   type NeuralVoiceName,
 } from "./neural-voice";
 import { ImmersiveFlowScene } from "./immersive-flow";
+import { NeuralGlobeScene } from "./neural-globe";
 import { APP_VERSION } from "./app-version";
 
 type SignalSource =
@@ -1149,6 +1150,8 @@ export default function Home() {
 
       context.restore();
     };
+    // Legacy Canvas reference retained while Matrix still shares these packet buffers.
+    void drawNeural;
 
     const drawMatrix = (time: number) => {
       const risk = infrastructureRiskRef.current;
@@ -1191,15 +1194,11 @@ export default function Home() {
       if (frameTime - lastFrame < frameInterval) return;
       lastFrame = frameTime;
       const time = Date.now() * 0.001;
-      if (visualizationRef.current === "neural") {
-        drawNeural(time);
-        return;
-      }
       if (visualizationRef.current === "matrix") {
         drawMatrix(time);
         return;
       }
-      if (visualizationRef.current === "flow") {
+      if (visualizationRef.current === "flow" || visualizationRef.current === "neural") {
         context.clearRect(0, 0, width, height);
         return;
       }
@@ -1948,25 +1947,45 @@ export default function Home() {
         infrastructure.risk >= 72 ? "is-disrupted" : ""
       }`}
     >
-      <ImmersiveFlowScene
-        active={visualization === "flow"}
-        paused={paused}
-        intensity={intensity}
-        infrastructureRisk={infrastructure.risk}
-        signal={
-          latest
-            ? {
-                id: latest.id,
-                tone: latest.tone,
-                magnitude: latest.magnitude,
-                code: packetCode(latest),
-              }
-            : undefined
-        }
-      />
+      {visualization === "flow" ? (
+        <ImmersiveFlowScene
+          active
+          paused={paused}
+          intensity={intensity}
+          infrastructureRisk={infrastructure.risk}
+          signal={
+            latest
+              ? {
+                  id: latest.id,
+                  tone: latest.tone,
+                  magnitude: latest.magnitude,
+                  code: packetCode(latest),
+                }
+              : undefined
+          }
+        />
+      ) : null}
+      {visualization === "neural" ? (
+        <NeuralGlobeScene
+          active
+          paused={paused}
+          intensity={intensity}
+          infrastructureRisk={infrastructure.risk}
+          signal={
+            latest
+              ? {
+                  id: latest.id,
+                  tone: latest.tone,
+                  magnitude: latest.magnitude,
+                  code: packetCode(latest),
+                }
+              : undefined
+          }
+        />
+      ) : null}
       <canvas
         ref={canvasRef}
-        className={`signal-canvas ${visualization === "flow" ? "is-inactive" : "is-active"}`}
+        className={`signal-canvas ${visualization === "matrix" ? "is-active" : "is-inactive"}`}
         aria-hidden="true"
       />
       <div

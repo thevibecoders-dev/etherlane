@@ -52,7 +52,7 @@ test("server-renders the Etherlane experience and metadata", async () => {
   assert.match(html, /SIGNAL SYNTH/);
   assert.match(html, /VISITORS/);
   assert.match(html, /LISTENERS/);
-  assert.match(html, /0\.2\.1/);
+  assert.match(html, /0\.3\.0/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|VibeVeilig/i);
 });
 
@@ -82,7 +82,7 @@ test("counts an anonymous live audience without persistent tracking", async () =
   const live = await heartbeat.json();
   assert.equal(live.visitors, 1);
   assert.equal(live.listeners, 1);
-  assert.equal(live.version, "0.2.1");
+  assert.equal(live.version, "0.3.0");
   assert.equal(live.ephemeral, true);
 
   const departure = await worker.fetch(
@@ -202,9 +202,10 @@ test("expands both routing vocabulary and signal-driven visual forms", async () 
 });
 
 test("builds the flow as a real PlayCanvas world instead of a flat backdrop", async () => {
-  const [page, scene, css, packageJson] = await Promise.all([
+  const [page, scene, globe, css, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/immersive-flow.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/neural-globe.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
@@ -225,6 +226,20 @@ test("builds the flow as a real PlayCanvas world instead of a flat backdrop", as
   assert.match(scene, /riskRef\.current/);
   assert.match(css, /\.immersive-flow\.is-active/);
   assert.doesNotMatch(scene, /localStorage|sessionStorage|indexedDB|document\.cookie/i);
+
+  assert.match(packageJson, /"world-atlas"/);
+  assert.match(packageJson, /"topojson-client"/);
+  assert.match(page, /<NeuralGlobeScene/);
+  assert.match(globe, /land-110m\.json/);
+  assert.match(globe, /CONTINENT LIGHT/);
+  assert.match(globe, /CONTINENT AURA/);
+  assert.match(globe, /DRAWING ROUTE/);
+  assert.match(globe, /routePositions/);
+  assert.match(globe, /routeCount = compact \? 15 : 34/);
+  assert.match(globe, /currentSignal\.magnitude/);
+  assert.match(globe, /new pc\.CameraFrame/);
+  assert.match(css, /\.neural-globe\.is-active/);
+  assert.doesNotMatch(globe, /localStorage|sessionStorage|indexedDB|document\.cookie/i);
 });
 
 test("ships an immersive generative synth without recording or persistence", async () => {

@@ -57,18 +57,18 @@ function seeded(index: number, salt = 0) {
 
 function createMatrixCanvas() {
   const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 512;
+  canvas.width = 1024;
+  canvas.height = 1024;
   const context = canvas.getContext("2d");
   if (!context) return canvas;
 
   context.fillStyle = "#02030a";
   context.fillRect(0, 0, canvas.width, canvas.height);
-  context.font = "600 18px ui-monospace, SFMono-Regular, Menlo, monospace";
+  context.font = "450 13px ui-monospace, SFMono-Regular, Menlo, monospace";
   context.textBaseline = "top";
 
-  for (let column = 0; column < 16; column += 1) {
-    for (let row = 0; row < 28; row += 1) {
+  for (let column = 0; column < 40; column += 1) {
+    for (let row = 0; row < 72; row += 1) {
       const energy = 0.28 + seeded(column, row) * 0.72;
       context.fillStyle = `rgba(174, 228, 255, ${energy})`;
       const glyph = seeded(row, column) > 0.68
@@ -76,13 +76,13 @@ function createMatrixCanvas() {
         : seeded(column, row + 11) > 0.5
           ? "1"
           : "0";
-      context.fillText(glyph, column * 32 + 8, row * 20 - 10);
+      context.fillText(glyph, column * 25.6 + 6, row * 14.4 - 8);
     }
   }
 
   context.strokeStyle = "rgba(128, 186, 255, .44)";
-  context.lineWidth = 2;
-  context.strokeRect(3, 3, 506, 506);
+  context.lineWidth = 1;
+  context.strokeRect(2, 2, 1020, 1020);
   return canvas;
 }
 
@@ -150,7 +150,7 @@ function resetPacket(packet: Packet, index: number, tone?: ImmersiveTone, burst 
   packet.altitude = 0.62 + seeded(index, 12) * (burst ? 4.8 : 3.4);
   packet.z = burst ? -118 - seeded(index, 14) * 42 : -35 - seeded(index, 9) * 145;
   packet.speed = 9 + seeded(index, 17) * 13 + (burst ? 9 : 0);
-  packet.size = 0.32 + seeded(index, 28) * (burst ? 1.1 : 0.78);
+  packet.size = 0.2 + seeded(index, 28) * (burst ? 0.72 : 0.52);
   packet.phase = seeded(index, 39) * Math.PI * 2;
   if (tone) packet.tone = tone;
   packet.entity.setLocalScale(packet.size * 1.25, packet.size * 0.86, packet.size * 1.7);
@@ -279,10 +279,10 @@ export function ImmersiveFlowScene({
     app.root.addChild(rimLight);
 
     const gridPositions: number[] = [];
-    for (let lane = -16; lane <= 16; lane += 1.35) {
+    for (let lane = -16; lane <= 16; lane += 0.82) {
       gridPositions.push(lane, 0, 8, lane, 0, -190);
     }
-    for (let z = 7; z >= -190; z -= Math.max(1.5, Math.abs(z) * 0.055)) {
+    for (let z = 7; z >= -190; z -= Math.max(1.2, Math.abs(z) * 0.043)) {
       gridPositions.push(-16, 0, z, 16, 0, z);
     }
     createLineField(
@@ -290,8 +290,8 @@ export function ImmersiveFlowScene({
       "DATA FLOOR",
       gridPositions,
       new pc.Color(0.08, 0.27, 1),
-      0.42,
-      2.1,
+      0.13,
+      1.15,
     );
 
     const lanePositions: number[] = [];
@@ -304,12 +304,12 @@ export function ImmersiveFlowScene({
       "LUMINOUS LANES",
       lanePositions,
       TONE_COLORS.cyan,
-      0.76,
-      4.2,
+      0.34,
+      2.45,
     );
 
     const tunnelPositions: number[] = [];
-    const archCount = compact ? 16 : 28;
+    const archCount = compact ? 20 : 38;
     for (let arch = 0; arch < archCount; arch += 1) {
       const z = -5 - arch * (compact ? 8.2 : 6.5);
       for (let segment = 0; segment < 28; segment += 1) {
@@ -341,8 +341,8 @@ export function ImmersiveFlowScene({
       "NETWORK VAULT",
       tunnelPositions,
       TONE_COLORS.violet,
-      0.34,
-      3.2,
+      0.15,
+      1.9,
     );
 
     const horizonMaterial = createMaterial(new pc.Color(0.06, 0.35, 1), {
@@ -379,14 +379,14 @@ export function ImmersiveFlowScene({
     (Object.keys(TONE_COLORS) as ImmersiveTone[]).forEach((tone) => {
       packetMaterials[tone] = createMaterial(TONE_COLORS[tone], {
         texture: matrixTexture,
-        emissiveIntensity: tone === "coral" ? 4.8 : 3.35,
+        emissiveIntensity: tone === "coral" ? 4.1 : 2.65,
         metalness: 0.34,
         gloss: 0.86,
       });
       shellMaterials[tone] = createMaterial(TONE_COLORS[tone], {
         additive: true,
-        opacity: 0.62,
-        emissiveIntensity: tone === "coral" ? 6 : 4.2,
+        opacity: 0.22,
+        emissiveIntensity: tone === "coral" ? 3.8 : 2.35,
       });
     });
 
@@ -548,7 +548,7 @@ export function ImmersiveFlowScene({
         const material = packetMaterials[tone];
         material.diffuseMapOffset.y = (textureOffset + index * 0.17) % 1;
         material.emissiveMapOffset.y = (textureOffset + index * 0.17) % 1;
-        material.emissiveIntensity = (tone === "coral" ? 4.4 : 2.85) + energy * 0.72 + risk * 1.8;
+        material.emissiveIntensity = (tone === "coral" ? 3.8 : 2.2) + energy * 0.58 + risk * 1.55;
         material.update();
       });
 

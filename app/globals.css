@@ -80,6 +80,7 @@ button {
 
 .signal-canvas,
 .immersive-flow,
+.neural-globe,
 .grain,
 .scanline {
   position: absolute;
@@ -110,10 +111,33 @@ button {
   opacity: 1;
 }
 
-.immersive-flow canvas {
+.immersive-flow canvas,
+.neural-globe canvas {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.neural-globe {
+  z-index: -3;
+  overflow: hidden;
+  opacity: 0;
+  background: #01020b;
+  transition: opacity 700ms ease;
+}
+
+.neural-globe.is-active {
+  opacity: 1;
+}
+
+.neural-globe-aura {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(26, 107, 255, 0.15), transparent 28%),
+    radial-gradient(circle at 50% 50%, rgba(105, 45, 255, 0.09), transparent 48%);
+  mix-blend-mode: screen;
 }
 
 .immersive-horizon,
@@ -2185,6 +2209,11 @@ button {
   }
 
   .immersive-flow {
+    position: fixed;
+    height: 100dvh;
+  }
+
+  .neural-globe {
     position: fixed;
     height: 100dvh;
   }
