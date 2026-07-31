@@ -33,10 +33,10 @@ test("server-renders the Etherlane experience and metadata", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Etherlane — Stand inside the internet<\/title>/i);
+  assert.match(html, /<title>Etherlane — Stand inside the flow<\/title>/i);
   assert.match(html, /ETHERLANE/);
   assert.match(html, /STAND INSIDE/);
-  assert.match(html, /THE INTERNET/);
+  assert.match(html, /THE FLOW/);
   assert.match(html, /ZERO RETENTION/);
   assert.match(html, /RIPE RIS/);
   assert.match(html, /RIPE ATLAS/);
@@ -46,17 +46,13 @@ test("server-renders the Etherlane experience and metadata", async () => {
   assert.match(html, /CORE NETWORK/);
   assert.match(html, /ROOT DNS/);
   assert.match(html, /CLOUDFLARE/);
-  assert.match(html, /HIGHWAY/);
-  assert.match(html, /ROUTES/);
-  assert.match(html, /WEATHER/);
-  assert.match(html, /LATENCY/);
-  assert.match(html, /DISTANCE/);
-  assert.match(html, /ARCHITECTURE/);
+  assert.match(html, /NEURAL/);
+  assert.match(html, /MATRIX/);
   assert.match(html, /AMBIENT SYNTH/);
   assert.match(html, /SIGNAL SYNTH/);
   assert.match(html, /VISITORS/);
   assert.match(html, /LISTENERS/);
-  assert.match(html, /0\.3\.3/);
+  assert.match(html, /0\.2\.0/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|VibeVeilig/i);
 });
 
@@ -86,7 +82,7 @@ test("counts an anonymous live audience without persistent tracking", async () =
   const live = await heartbeat.json();
   assert.equal(live.visitors, 1);
   assert.equal(live.listeners, 1);
-  assert.equal(live.version, "0.3.3");
+  assert.equal(live.version, "0.2.0");
   assert.equal(live.ephemeral, true);
 
   const departure = await worker.fetch(
@@ -184,15 +180,6 @@ test("expands both routing vocabulary and signal-driven visual forms", async () 
   assert.match(page, /type VisualizationMode = "flow" \| "neural" \| "matrix"/);
   assert.match(page, /drawNeural/);
   assert.match(page, /drawMatrix/);
-  assert.match(page, /drawPacketCube/);
-  assert.match(page, /quadraticCurveTo/);
-  assert.match(page, /mass:\s*0\.72/);
-  assert.match(page, /event\.source === "ATLAS"/);
-  assert.match(page, /LIVE AUDIOVISUAL INTERNET OBSERVATORY/);
-  assert.match(page, /Latency[\s\S]*distance/i);
-  assert.match(page, /traffic[\s\S]*density/i);
-  assert.match(page, /routing[\s\S]*architecture/i);
-  assert.match(page, /disruption[\s\S]*weather/i);
   assert.match(page, /route:\s*number\[\]/);
   assert.match(page, /node\.x \+= node\.vx/);
   assert.match(page, /packet\.route\.forEach/);
@@ -202,25 +189,6 @@ test("expands both routing vocabulary and signal-driven visual forms", async () 
   assert.match(page, /devicePixelRatio = compact \? 1/);
   assert.match(css, /@keyframes transmit/);
   assert.match(css, /\.visualizer-switch/);
-  assert.match(css, /\.weather-hud/);
-  assert.match(css, /\.sonification-map/);
-  assert.doesNotMatch(css, /url\("\/og\.png"\)/);
-  assert.match(page, /drawImmersiveHighway/);
-  assert.match(page, /const archFrames/);
-  assert.match(page, /const orderedPackets/);
-  assert.match(page, /packet\.progress = -0\.025/);
-  assert.match(page, /visualizationRef\.current === "flow"/);
-  assert.match(page, /const matrixScroll/);
-  assert.match(page, /const skyNodes/);
-  assert.match(page, /const horizonColumns/);
-  assert.match(page, /const transmission/);
-  assert.match(page, /const laneIndex = \(\(packet\.from \* 3 \+ packet\.to\) % 7\) - 3/);
-  assert.match(page, /const lane = laneIndex \* 0\.275/);
-  assert.match(page, /height \* \(0\.558/);
-  assert.match(page, /const packetGlow/);
-  assert.doesNotMatch(page, /const previous = project\(lane/);
-  assert.match(page, /seedCount = compact \? 8 : 18/);
-  assert.match(page, /\(11 \+ packet\.mass \* 25\) \* point\.scale/);
   assert.match(css, /\.infrastructure-panel/);
   assert.match(css, /\.etherlane-shell\.is-disrupted/);
   assert.match(css, /@keyframes distress-background/);

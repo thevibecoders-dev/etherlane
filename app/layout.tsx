@@ -29,30 +29,30 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol =
     requestHeaders.get("x-forwarded-proto") ??
     (host.startsWith("localhost") ? "http" : "https");
-  const imageUrl = new URL("/og.png", `${protocol}://${host}`).toString();
+  const imageUrl = new URL("/og-etherlane.png", `${protocol}://${host}`).toString();
 
   return {
-    title: "Etherlane — Stand inside the internet",
+    title: "Etherlane — Stand inside the flow",
     description:
-      "An internet weather observatory translating public routing, latency, traffic and infrastructure signals into packet architecture, light and generative sound.",
+      "A live audiovisual observatory translating public routing, network measurements and global knowledge signals into light, motion, generative music and a changing data voice.",
     openGraph: {
-      title: "Etherlane — Stand inside the internet",
-      description: "Public internet signals become packet traffic, route architecture and weather.",
+      title: "Etherlane — Stand inside the flow",
+      description: "The public internet, translated into light, motion and generative music.",
       type: "website",
       locale: "en_US",
       images: [
         {
           url: imageUrl,
-          width: 1672,
-          height: 941,
-          alt: "Etherlane — an infinite highway of luminous public internet packets",
+          width: 1680,
+          height: 945,
+          alt: "Etherlane — a luminous highway of public internet signals",
         },
       ],
     },
     twitter: {
       card: "summary_large_image",
-      title: "Etherlane — Stand inside the internet",
-      description: "Public internet signals become packet traffic, route architecture and weather.",
+      title: "Etherlane — Stand inside the flow",
+      description: "The public internet, translated into light, motion and generative music.",
       images: [imageUrl],
     },
   };

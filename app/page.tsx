@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   binauralPresets,
   defaultSynthSettings,
@@ -85,8 +85,6 @@ type VisualPacket = {
   code: string;
   progress: number;
   speed: number;
-  mass: number;
-  distance: number;
   lane: number;
   from: number;
   to: number;
@@ -134,9 +132,9 @@ const sourceKeys: Array<keyof SourceHealth> = [
 ];
 
 const visualizations: Array<{ value: VisualizationMode; label: string; hint: string }> = [
-  { value: "flow", label: "HIGHWAY", hint: "Packet traffic in perspective" },
-  { value: "neural", label: "ROUTES", hint: "Living autonomous-system architecture" },
-  { value: "matrix", label: "WEATHER", hint: "Code rain and network pressure" },
+  { value: "flow", label: "FLOW", hint: "Signal highway" },
+  { value: "neural", label: "NEURAL", hint: "Node transmission" },
+  { value: "matrix", label: "MATRIX", hint: "Packet code rain" },
 ];
 
 const tones: Record<SignalTone, { rgb: string; hex: string }> = {
@@ -322,27 +320,27 @@ function voiceQualityScore(voice: SpeechSynthesisVoice) {
 
 function dreamPhraseFor(event: SignalEvent) {
   const explicit: Array<[RegExp, string]> = [
-    [/OUTAGE|NOTIFICATION/, "a storm forms at the horizon"],
-    [/WITHDRAWN|DELETED|REMOVED/, "one road closes"],
-    [/ROOT/, "the deep roots are holding"],
-    [/PING|LATENCY/, "distance becomes audible"],
-    [/ROUTE|PATH|PEER|SESSION/, "a new road appears"],
-    [/PAGE|KNOWLEDGE/, "knowledge crosses the lane"],
-    [/CODE|RELEASE|REFERENCE/, "code passes in the distance"],
-    [/THREAD|CONVERSATION|ITEM/, "public voices travel"],
-    [/BLOCK|TRANSACTION|LEDGER/, "the ledger moves downstream"],
-    [/NOMINAL|OPERATIONAL/, "the weather is clear"],
+    [/OUTAGE|NOTIFICATION/, "signal fracture"],
+    [/WITHDRAWN|DELETED|REMOVED/, "path fading"],
+    [/ROOT/, "deep roots shifting"],
+    [/PING|LATENCY/, "distant echo"],
+    [/ROUTE|PATH|PEER|SESSION/, "new paths"],
+    [/PAGE|KNOWLEDGE/, "knowledge blooming"],
+    [/CODE|RELEASE|REFERENCE/, "code awakening"],
+    [/THREAD|CONVERSATION|ITEM/, "voices gathering"],
+    [/BLOCK|TRANSACTION|LEDGER/, "the ledger turns"],
+    [/NOMINAL|OPERATIONAL/, "all is flowing"],
   ];
   const matched = explicit.find(([pattern]) => pattern.test(event.kind));
   const pools: Record<SignalSource, string[]> = {
-    RIS: ["routes are breathing", "a path opens", "traffic changes direction"],
-    ATLAS: ["a distant return", "latency adds depth", "an echo crosses the world"],
-    WIKIMEDIA: ["memory in transit", "words pass like light", "knowledge is moving"],
-    GITHUB: ["code in motion", "a branch enters the stream", "software crosses the lane"],
-    HACKERNEWS: ["voices in the wire", "ideas gather at an interchange", "the network wonders"],
-    BLOCKCHAIN: ["the ledger advances", "another block passes", "time is recorded"],
-    INFRASTRUCTURE: ["the core is listening", "pressure at a major junction", "roots beneath the road"],
-    SYNTHETIC: ["between two signals", "soft road noise", "the ether keeps moving"],
+    RIS: ["routes breathing", "a path opens", "distant crossings"],
+    ATLAS: ["soft return", "across the distance", "echo received"],
+    WIKIMEDIA: ["memory growing", "words become light", "knowledge drifting"],
+    GITHUB: ["code in motion", "a branch unfolds", "new shapes"],
+    HACKERNEWS: ["voices in the wire", "ideas gathering", "the network wonders"],
+    BLOCKCHAIN: ["the ledger turns", "another block", "time recorded"],
+    INFRASTRUCTURE: ["the core is listening", "deep network pulse", "roots holding"],
+    SYNTHETIC: ["between signals", "soft static", "the ether dreams"],
   };
   const options = pools[event.source];
   const seed =
@@ -351,21 +349,21 @@ function dreamPhraseFor(event: SignalEvent) {
     Math.floor(event.timestamp / 1000);
   const beginnings = [
     "listen",
-    "look ahead",
-    "beneath the road noise",
-    "inside the traffic",
-    "at the horizon",
-    "somewhere in the stream",
-    "between one packet and the next",
+    "slowly",
+    "beneath the noise",
+    "inside the current",
+    "across the ether",
+    "somewhere in the flow",
+    "between one pulse and the next",
   ];
   const endings = [
-    "moving into distance",
-    "passing the observer",
+    "opening into distance",
+    "drifting without edges",
     "returning as light",
-    "crossing through the dark",
-    "becoming part of the road",
-    "the traffic continues",
-    "then disappearing from view",
+    "moving through the dark",
+    "becoming another path",
+    "still changing",
+    "and dissolving again",
   ];
   const core = matched?.[1] ?? options[Math.abs(seed) % options.length];
   return `${beginnings[Math.abs(seed >>> 2) % beginnings.length]}... ${core}... ${
@@ -751,14 +749,7 @@ export default function Home() {
           tone: event.source === "INFRASTRUCTURE" && event.magnitude >= 70 ? "coral" : event.tone,
           code: packetCode(complete),
           progress: copy * -0.055,
-          speed:
-            (compact ? 0.011 : 0.0075 + event.magnitude / 24000) *
-            (event.source === "ATLAS" ? 0.72 : 1),
-          mass: 0.72 + clamp(event.magnitude / 58, 0, 1.8),
-          distance:
-            event.source === "ATLAS"
-              ? clamp(0.28 + event.magnitude / 115, 0.28, 1)
-              : clamp(0.12 + routeLength / 8, 0.12, 0.88),
+          speed: compact ? 0.012 : 0.008 + event.magnitude / 22000,
           lane: (Math.random() - 0.5) * 1.7,
           from: route[0],
           to: route.at(-1) ?? route[0],
@@ -877,33 +868,6 @@ export default function Home() {
       });
     }
 
-    if (visualPacketsRef.current.length === 0) {
-      const seedCount = compact ? 8 : 18;
-      for (let index = 0; index < seedCount; index += 1) {
-        const route = Array.from(
-          { length: 3 + (index % 4) },
-          (_, routeIndex) => (index * 7 + routeIndex * 11) % nodes.length,
-        );
-        visualPacketsRef.current.push({
-          tone: (["cyan", "violet", "amber"] as SignalTone[])[index % 3],
-          code: `IP:${(index * 73).toString(16).toUpperCase().padStart(3, "0")} ${(
-            0b10110100 ^ (index * 17)
-          )
-            .toString(2)
-            .slice(-8)
-            .padStart(8, "0")}`,
-          progress: (index / seedCount) * 0.96,
-          speed: 0.0048 + (index % 5) * 0.00055,
-          mass: 0.82 + (index % 4) * 0.46,
-          distance: 0.18 + (index % 5) * 0.14,
-          lane: ((index % 7) - 3) * 0.27 + (index % 2 ? 0.08 : -0.08),
-          from: route[0],
-          to: route.at(-1) ?? route[0],
-          route,
-        });
-      }
-    }
-
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
       width = Math.max(1, rect.width);
@@ -921,111 +885,13 @@ export default function Home() {
 
     const project = (lane: number, depth: number) => {
       const time = Date.now() * 0.001;
-      const horizonY = height * (0.558 + Math.sin(time * 0.12) * 0.002);
-      const perspective = Math.pow(depth, 1.92);
+      const horizonY = height * (0.405 + Math.sin(time * 0.17) * 0.006);
+      const perspective = Math.pow(depth, 1.7);
       return {
-        x: width / 2 + lane * perspective * width * 0.62,
-        y: horizonY + perspective * height * 0.51,
-        scale: 0.11 + perspective * 2.15,
+        x: width / 2 + lane * perspective * width * 0.48,
+        y: horizonY + perspective * height * 0.66,
+        scale: 0.16 + perspective * 1.7,
       };
-    };
-
-    const quadraticPoint = (
-      from: { x: number; y: number },
-      control: { x: number; y: number },
-      to: { x: number; y: number },
-      progress: number,
-    ) => {
-      const inverse = 1 - progress;
-      return {
-        x: inverse * inverse * from.x + 2 * inverse * progress * control.x + progress * progress * to.x,
-        y: inverse * inverse * from.y + 2 * inverse * progress * control.y + progress * progress * to.y,
-      };
-    };
-
-    const drawPacketCube = (
-      x: number,
-      y: number,
-      side: number,
-      tone: SignalTone,
-      alpha: number,
-      code: string,
-      showCode: boolean,
-      matrixTime = 0,
-    ) => {
-      const color = tones[tone];
-      const skew = side * 0.34;
-      context.save();
-      context.shadowColor = color.hex;
-      context.shadowBlur = compact ? 0 : side * 1.5;
-      context.fillStyle = `rgba(${color.rgb}, ${alpha * 0.15})`;
-      context.strokeStyle = `rgba(${color.rgb}, ${alpha * 0.86})`;
-      context.lineWidth = Math.max(0.6, side * 0.055);
-
-      context.beginPath();
-      context.rect(x - side / 2, y - side / 2, side, side);
-      context.fill();
-      context.stroke();
-
-      if (side >= 3.5) {
-        const seed = code.charCodeAt(0) + code.charCodeAt(Math.min(4, code.length - 1));
-        const fontSize = Math.max(3.8, Math.min(compact ? 6 : 9, side * 0.13));
-        const rowHeight = fontSize * 1.15;
-        const rowCount = Math.max(2, Math.min(compact ? 5 : 9, Math.ceil(side / rowHeight) + 1));
-        const columnCount = Math.max(3, Math.min(compact ? 7 : 12, Math.floor(side / (fontSize * 0.62))));
-        const matrixScroll = (matrixTime * (compact ? 7 : 12) + seed) % rowHeight;
-        context.save();
-        context.beginPath();
-        context.rect(x - side / 2 + 1, y - side / 2 + 1, side - 2, side - 2);
-        context.clip();
-        context.shadowBlur = 0;
-        context.font = `${fontSize}px monospace`;
-        context.textBaseline = "top";
-        for (let row = -1; row < rowCount; row += 1) {
-          let binary = "";
-          for (let column = 0; column < columnCount; column += 1) {
-            binary += (seed + row * 7 + column * 13 + Math.floor(matrixTime * 4)) % 3 === 0 ? "1" : "0";
-          }
-          const rowY = y - side / 2 + row * rowHeight + matrixScroll;
-          context.fillStyle = row === 1
-            ? `rgba(241,247,255,${alpha * 0.9})`
-            : `rgba(${color.rgb},${alpha * (0.32 + ((row + seed) % 3) * 0.16)})`;
-          context.fillText(binary, x - side * 0.43, rowY);
-        }
-        context.restore();
-      }
-
-      context.beginPath();
-      context.moveTo(x - side / 2, y - side / 2);
-      context.lineTo(x - side / 2 + skew, y - side / 2 - skew);
-      context.lineTo(x + side / 2 + skew, y - side / 2 - skew);
-      context.lineTo(x + side / 2, y - side / 2);
-      context.closePath();
-      context.fillStyle = `rgba(${color.rgb}, ${alpha * 0.09})`;
-      context.fill();
-      context.stroke();
-
-      context.beginPath();
-      context.moveTo(x + side / 2, y - side / 2);
-      context.lineTo(x + side / 2 + skew, y - side / 2 - skew);
-      context.lineTo(x + side / 2 + skew, y + side / 2 - skew);
-      context.lineTo(x + side / 2, y + side / 2);
-      context.closePath();
-      context.fillStyle = `rgba(${color.rgb}, ${alpha * 0.06})`;
-      context.fill();
-      context.stroke();
-
-      if (showCode) {
-        context.shadowBlur = 0;
-        context.strokeStyle = `rgba(${color.rgb}, ${alpha * 0.42})`;
-        context.lineWidth = Math.max(0.5, side * 0.018);
-        const scanY = y - side / 2 + ((matrixTime * 18 + side) % side);
-        context.beginPath();
-        context.moveTo(x - side / 2 + 2, scanY);
-        context.lineTo(x + side / 2 - 2, scanY);
-        context.stroke();
-      }
-      context.restore();
     };
 
     const drawNeural = (time: number) => {
@@ -1067,21 +933,8 @@ export default function Home() {
         context.beginPath();
         packet.route.forEach((nodeIndex, routeIndex) => {
           const node = nodes[nodeIndex % nodes.length];
-          if (routeIndex === 0) {
-            context.moveTo(node.x * width, node.y * height);
-            return;
-          }
-          const previous = nodes[packet.route[routeIndex - 1] % nodes.length];
-          const fromX = previous.x * width;
-          const fromY = previous.y * height;
-          const toX = node.x * width;
-          const toY = node.y * height;
-          context.quadraticCurveTo(
-            (fromX + toX) / 2,
-            Math.min(fromY, toY) - height * (0.035 + packet.distance * 0.08),
-            toX,
-            toY,
-          );
+          if (routeIndex === 0) context.moveTo(node.x * width, node.y * height);
+          else context.lineTo(node.x * width, node.y * height);
         });
         context.stroke();
       }
@@ -1106,19 +959,8 @@ export default function Home() {
         const segmentProgress = routeProgress - routeIndex;
         const from = nodes[packet.route[routeIndex] % nodes.length];
         const to = nodes[packet.route[Math.min(routeIndex + 1, packet.route.length - 1)] % nodes.length];
-        const fromPoint = { x: from.x * width, y: from.y * height };
-        const toPoint = { x: to.x * width, y: to.y * height };
-        const routePoint = quadraticPoint(
-          fromPoint,
-          {
-            x: (fromPoint.x + toPoint.x) / 2,
-            y: Math.min(fromPoint.y, toPoint.y) - height * (0.035 + packet.distance * 0.08),
-          },
-          toPoint,
-          segmentProgress,
-        );
-        const x = routePoint.x;
-        const y = routePoint.y;
+        const x = (from.x + (to.x - from.x) * segmentProgress) * width;
+        const y = (from.y + (to.y - from.y) * segmentProgress) * height;
         const color = tones[packet.tone];
         context.fillStyle = color.hex;
         context.beginPath();
@@ -1164,367 +1006,7 @@ export default function Home() {
         context.fillText("10110100 01101001", x, y - 15);
         context.fillText("00101101 11000010", x, y - 30);
       }
-      if (risk >= 42) {
-        const stormBands = compact ? 3 : 6;
-        for (let band = 0; band < stormBands; band += 1) {
-          const stormY = height * (0.15 + band * 0.11) + Math.sin(time * (0.32 + band * 0.04)) * 18;
-          context.strokeStyle = `rgba(255,100,105,${0.025 + risk / 1250})`;
-          context.lineWidth = 1 + risk / 55;
-          context.beginPath();
-          context.moveTo(-30, stormY);
-          context.bezierCurveTo(
-            width * 0.32,
-            stormY - 45,
-            width * 0.64,
-            stormY + 54,
-            width + 30,
-            stormY - 8,
-          );
-          context.stroke();
-        }
-      }
       visualPacketsRef.current = visualPacketsRef.current.filter((packet) => packet.progress <= 1.08);
-      context.restore();
-    };
-
-    const drawImmersiveHighway = (time: number) => {
-      const risk = infrastructureRiskRef.current;
-      const horizonY = height * (0.558 + Math.sin(time * 0.12) * 0.002);
-      const stormStrength = 0.1 + risk / 115;
-
-      context.clearRect(0, 0, width, height);
-      const sky = context.createLinearGradient(0, 0, 0, height);
-      sky.addColorStop(0, "#02040a");
-      sky.addColorStop(0.5, risk >= 62 ? "#12040a" : "#07071a");
-      sky.addColorStop(1, "#010207");
-      context.fillStyle = sky;
-      context.fillRect(0, 0, width, height);
-
-      context.save();
-      context.globalCompositeOperation = "screen";
-
-      const horizonGlow = context.createRadialGradient(
-        width / 2,
-        horizonY,
-        0,
-        width / 2,
-        horizonY,
-        width * 0.52,
-      );
-      horizonGlow.addColorStop(0, "rgba(113,86,255,.42)");
-      horizonGlow.addColorStop(0.2, "rgba(48,144,255,.12)");
-      horizonGlow.addColorStop(1, "rgba(0,0,0,0)");
-      context.fillStyle = horizonGlow;
-      context.fillRect(0, 0, width, height);
-
-      const skyNodeCount = compact ? 28 : 72;
-      const skyNodes = Array.from({ length: skyNodeCount }, (_, index) => ({
-        x:
-          (((index * 83 + 17) % 997) / 997) * width +
-          Math.sin(time * 0.055 + index * 1.7) * (compact ? 2 : 5),
-        y:
-          (((index * 47 + 31) % 431) / 431) * horizonY * 0.94 +
-          Math.cos(time * 0.043 + index * 1.13) * (compact ? 1.5 : 4),
-      }));
-      for (let index = 0; index < skyNodes.length; index += 1) {
-        const node = skyNodes[index];
-        for (const offset of compact ? [5] : [5, 13]) {
-          const target = skyNodes[(index + offset) % skyNodes.length];
-          const distance = Math.hypot(target.x - node.x, target.y - node.y);
-          if (distance > width * 0.29) continue;
-          context.strokeStyle = `rgba(${index % 3 === 0 ? "151,105,255" : "87,228,255"},${
-            0.025 + (Math.sin(time * 0.23 + index) + 1) * 0.016
-          })`;
-          context.lineWidth = 0.45;
-          context.beginPath();
-          context.moveTo(node.x, node.y);
-          context.lineTo(target.x, target.y);
-          context.stroke();
-        }
-        const pulse = 0.18 + (Math.sin(time * 0.7 + index * 1.91) + 1) * 0.18;
-        context.fillStyle = index % 4 === 0
-          ? `rgba(151,105,255,${pulse})`
-          : `rgba(87,228,255,${pulse * 0.82})`;
-        context.beginPath();
-        context.arc(node.x, node.y, compact ? 0.55 : 0.7 + (index % 3) * 0.22, 0, Math.PI * 2);
-        context.fill();
-      }
-
-      const storm = context.createRadialGradient(
-        width * 0.82,
-        horizonY * 0.83,
-        0,
-        width * 0.82,
-        horizonY * 0.83,
-        width * 0.34,
-      );
-      storm.addColorStop(0, `rgba(255,37,58,${stormStrength * 0.54})`);
-      storm.addColorStop(0.46, `rgba(143,12,37,${stormStrength * 0.32})`);
-      storm.addColorStop(1, "rgba(0,0,0,0)");
-      context.fillStyle = storm;
-      context.fillRect(0, 0, width, horizonY * 1.25);
-
-      const cloudCount = compact ? 5 : 10;
-      for (let cloud = 0; cloud < cloudCount; cloud += 1) {
-        const cloudX = width * (0.68 + ((cloud * 37) % 31) / 100);
-        const cloudY = horizonY * (0.58 + ((cloud * 19) % 24) / 100);
-        const cloudWidth = width * (0.06 + (cloud % 4) * 0.018);
-        context.fillStyle = `rgba(255,48,70,${stormStrength * (0.035 + (cloud % 3) * 0.018)})`;
-        context.beginPath();
-        context.ellipse(
-          cloudX + Math.sin(time * 0.08 + cloud) * 9,
-          cloudY,
-          cloudWidth,
-          cloudWidth * 0.24,
-          -0.12,
-          0,
-          Math.PI * 2,
-        );
-        context.fill();
-      }
-
-      if (risk >= 42 && Math.floor(time * 2.1) % 13 === 0) {
-        const lightningX = width * (0.79 + Math.sin(Math.floor(time)) * 0.06);
-        context.strokeStyle = `rgba(255,225,236,${0.34 + risk / 180})`;
-        context.lineWidth = compact ? 0.8 : 1.4;
-        context.shadowColor = "#ff4c70";
-        context.shadowBlur = compact ? 0 : 18;
-        context.beginPath();
-        context.moveTo(lightningX, horizonY * 0.57);
-        context.lineTo(lightningX - 12, horizonY * 0.71);
-        context.lineTo(lightningX + 3, horizonY * 0.69);
-        context.lineTo(lightningX - 18, horizonY * 0.92);
-        context.stroke();
-        context.shadowBlur = 0;
-      }
-
-      const horizonColumns = compact ? 18 : 48;
-      for (let column = 0; column < horizonColumns; column += 1) {
-        const x = ((column + 0.5) / horizonColumns) * width;
-        const towerHeight = 4 + ((column * 29) % 31) + Math.sin(time * 0.31 + column) * 2;
-        const isStormSide = x > width * 0.66;
-        const rgb = isStormSide && risk >= 42
-          ? "255,78,93"
-          : column % 3 === 0
-            ? "151,105,255"
-            : "87,228,255";
-        const tower = context.createLinearGradient(x, horizonY - towerHeight, x, horizonY + 9);
-        tower.addColorStop(0, `rgba(${rgb},.34)`);
-        tower.addColorStop(1, `rgba(${rgb},.03)`);
-        context.strokeStyle = tower;
-        context.lineWidth = compact ? 0.7 : 1 + (column % 4) * 0.22;
-        context.beginPath();
-        context.moveTo(x, horizonY - towerHeight);
-        context.lineTo(x, horizonY + 9);
-        context.stroke();
-        if (!compact || column % 3 === 0) {
-          context.fillStyle = `rgba(${rgb},${0.22 + (Math.sin(time * 1.1 + column) + 1) * 0.13})`;
-          context.fillRect(x - 1, horizonY - towerHeight - 2, 2, 2);
-        }
-      }
-
-      const dataBands = compact ? 3 : 7;
-      context.font = `${compact ? 5 : 7}px monospace`;
-      for (let band = 0; band < dataBands; band += 1) {
-        const direction = band % 2 === 0 ? 1 : -1;
-        const x = ((time * (12 + band * 3) * direction + band * 173) % (width + 180)) - 90;
-        const y = horizonY + 11 + band * (compact ? 4 : 5);
-        context.fillStyle = `rgba(${band % 3 === 0 ? "255,190,91" : "87,228,255"},${compact ? 0.16 : 0.24})`;
-        context.fillText(`${(band * 73).toString(2).padStart(9, "0")}  ${band % 2 ? "RX" : "TX"}`, x, y);
-      }
-
-      const road = context.createLinearGradient(width / 2, horizonY, width / 2, height);
-      road.addColorStop(0, "rgba(26,28,74,.08)");
-      road.addColorStop(0.42, "rgba(17,20,51,.31)");
-      road.addColorStop(1, "rgba(5,8,24,.82)");
-      context.fillStyle = road;
-      context.beginPath();
-      context.moveTo(width * 0.48, horizonY);
-      context.lineTo(width * 0.52, horizonY);
-      context.lineTo(width * 1.08, height);
-      context.lineTo(width * -0.08, height);
-      context.closePath();
-      context.fill();
-
-      for (let boundary = -3.5; boundary <= 3.5; boundary += 1) {
-        const lane = boundary * 0.275;
-        const upper = project(lane, 0.012);
-        const lower = project(lane, 1.06);
-        const laneColor = Math.round(boundary) % 3 === 0
-          ? "87,228,255"
-          : Math.round(boundary) % 2 === 0
-            ? "151,105,255"
-            : "255,190,91";
-        const laneGradient = context.createLinearGradient(upper.x, upper.y, lower.x, lower.y);
-        laneGradient.addColorStop(0, `rgba(${laneColor},0)`);
-        laneGradient.addColorStop(0.34, `rgba(${laneColor},.22)`);
-        laneGradient.addColorStop(1, `rgba(${laneColor},.46)`);
-        context.strokeStyle = laneGradient;
-        context.lineWidth = 0.8;
-        context.beginPath();
-        context.moveTo(upper.x, upper.y);
-        context.lineTo(lower.x, lower.y);
-        context.stroke();
-      }
-
-      for (let laneIndex = -3; laneIndex <= 3; laneIndex += 1) {
-        const markerLane = laneIndex * 0.275;
-        for (let marker = 0; marker < (compact ? 4 : 7); marker += 1) {
-          const markerDepth = ((time * 0.075 + marker / 7 + (laneIndex + 3) * 0.035) % 1) ** 1.55;
-          const markerPoint = project(markerLane, markerDepth);
-          context.fillStyle = laneIndex % 2 === 0
-            ? `rgba(87,228,255,${0.08 + markerDepth * 0.42})`
-            : `rgba(255,190,91,${0.06 + markerDepth * 0.32})`;
-          context.beginPath();
-          context.ellipse(
-            markerPoint.x,
-            markerPoint.y,
-            Math.max(0.5, markerPoint.scale * 1.2),
-            Math.max(0.4, markerPoint.scale * 0.42),
-            0,
-            0,
-            Math.PI * 2,
-          );
-          context.fill();
-        }
-      }
-
-      const gridRows = compact ? 13 : 27;
-      for (let row = 0; row < gridRows; row += 1) {
-        const phase = (time * 0.085 + row / gridRows) % 1;
-        const depth = Math.pow(phase, 1.48);
-        const left = project(-1.08, depth);
-        const right = project(1.08, depth);
-        context.strokeStyle = `rgba(96,119,255,${0.025 + depth * 0.19})`;
-        context.lineWidth = 0.5;
-        context.beginPath();
-        context.moveTo(left.x, left.y);
-        context.lineTo(right.x, right.y);
-        context.stroke();
-      }
-
-      const archCount = compact ? 8 : 17;
-      const nodeCount = compact ? 6 : 11;
-      const archFrames = Array.from({ length: archCount }, (_, archIndex) => {
-        const phase = (time * 0.024 + archIndex / archCount) % 1;
-        const depth = 0.04 + Math.pow(phase, 1.42) * 1.02;
-        const center = project(0, depth);
-        const left = project(-1.06, depth);
-        const right = project(1.06, depth);
-        const radiusX = Math.max(5, (right.x - left.x) / 2);
-        const radiusY = 10 + Math.pow(depth, 1.2) * height * 0.98;
-        const points = Array.from({ length: nodeCount }, (_, nodeIndex) => {
-          const angle = Math.PI - nodeIndex / (nodeCount - 1) * Math.PI;
-          return {
-            x: center.x + Math.cos(angle) * radiusX,
-            y: center.y - Math.sin(angle) * radiusY,
-          };
-        });
-        return { depth, center, radiusX, radiusY, points, archIndex };
-      }).sort((first, second) => first.depth - second.depth);
-
-      for (let frameIndex = 0; frameIndex < archFrames.length; frameIndex += 1) {
-        const frame = archFrames[frameIndex];
-        const alpha = 0.07 + frame.depth * 0.42;
-        const hue = frame.archIndex % 3 === 0 ? "87,228,255" : "151,105,255";
-        context.strokeStyle = `rgba(${hue},${alpha})`;
-        context.lineWidth = compact ? 0.55 : 0.65 + frame.depth * 1.05;
-        context.beginPath();
-        context.ellipse(
-          frame.center.x,
-          frame.center.y,
-          frame.radiusX,
-          frame.radiusY,
-          0,
-          Math.PI,
-          Math.PI * 2,
-        );
-        context.stroke();
-
-        const previous = archFrames[frameIndex - 1];
-        frame.points.forEach((node, nodeIndex) => {
-          if (previous) {
-            const previousNode = previous.points[nodeIndex];
-            context.strokeStyle = `rgba(${hue},${alpha * 0.34})`;
-            context.lineWidth = 0.5;
-            context.beginPath();
-            context.moveTo(previousNode.x, previousNode.y);
-            context.lineTo(node.x, node.y);
-            context.stroke();
-
-            if ((!compact || nodeIndex % 2 === 0) && (frameIndex + nodeIndex) % 3 === 0) {
-              const transmission = (time * 0.34 + frameIndex * 0.17 + nodeIndex * 0.11) % 1;
-              const pulseX = previousNode.x + (node.x - previousNode.x) * transmission;
-              const pulseY = previousNode.y + (node.y - previousNode.y) * transmission;
-              context.fillStyle = nodeIndex % 4 === 0 ? "rgba(255,210,123,.82)" : "rgba(126,238,255,.78)";
-              context.beginPath();
-              context.arc(pulseX, pulseY, compact ? 0.75 : 1.15 + frame.depth * 0.7, 0, Math.PI * 2);
-              context.fill();
-            }
-          }
-
-          const pulse = 0.72 + Math.sin(time * 1.3 + frame.archIndex * 0.8 + nodeIndex) * 0.28;
-          context.fillStyle = nodeIndex % 4 === 0
-            ? `rgba(255,190,91,${alpha * pulse})`
-            : `rgba(${hue},${alpha * pulse + 0.08})`;
-          context.beginPath();
-          context.arc(node.x, node.y, Math.max(0.65, frame.depth * (compact ? 1.65 : 2.35)), 0, Math.PI * 2);
-          context.fill();
-        });
-      }
-
-      const orderedPackets = [...visualPacketsRef.current].sort((first, second) => first.progress - second.progress);
-      for (const packet of orderedPackets) {
-        if (!pausedRef.current) packet.progress += packet.speed * (0.72 + intensityRef.current * 0.0045);
-        if (packet.progress > 1.08) {
-          packet.progress = -0.025 - (packet.from % 5) * 0.016;
-          packet.lane = ((packet.to % 7) - 3) * 0.27 + (packet.to % 2 ? 0.07 : -0.07);
-        }
-        if (packet.progress < 0) continue;
-        const depth = clamp(packet.progress * (1 - packet.distance * 0.09), 0.004, 1.08);
-        const laneIndex = ((packet.from * 3 + packet.to) % 7) - 3;
-        const lane = laneIndex * 0.275;
-        const point = project(lane, depth);
-        const color = tones[packet.tone];
-        const alpha = clamp(0.16 + depth * 0.9, 0, 1);
-        const side = Math.max(3, (10 + packet.mass * 28) * point.scale * (compact ? 0.76 : 1));
-
-        const packetGlow = context.createRadialGradient(
-          point.x,
-          point.y + side * 0.58,
-          0,
-          point.x,
-          point.y + side * 0.58,
-          side * 0.95,
-        );
-        packetGlow.addColorStop(0, `rgba(${color.rgb},${alpha * 0.25})`);
-        packetGlow.addColorStop(1, `rgba(${color.rgb},0)`);
-        context.fillStyle = packetGlow;
-        context.fillRect(point.x - side, point.y, side * 2, side * 1.25);
-        drawPacketCube(
-          point.x,
-          point.y,
-          side,
-          packet.tone,
-          alpha,
-          packet.code,
-          depth > 0.38 && (!compact || packet.mass > 1.4),
-          time + packet.from * 0.37,
-        );
-      }
-
-      const vignette = context.createRadialGradient(
-        width / 2,
-        height * 0.5,
-        width * 0.12,
-        width / 2,
-        height * 0.5,
-        width * 0.78,
-      );
-      vignette.addColorStop(0, "rgba(0,0,0,0)");
-      vignette.addColorStop(1, "rgba(0,0,0,.64)");
-      context.fillStyle = vignette;
-      context.fillRect(0, 0, width, height);
       context.restore();
     };
 
@@ -1543,13 +1025,9 @@ export default function Home() {
         drawMatrix(time);
         return;
       }
-      if (visualizationRef.current === "flow") {
-        drawImmersiveHighway(time);
-        return;
-      }
       context.clearRect(0, 0, width, height);
       const infrastructureRisk = infrastructureRiskRef.current;
-      const horizonY = height * (0.475 + Math.sin(time * 0.17) * 0.004);
+      const horizonY = height * (0.405 + Math.sin(time * 0.17) * 0.006);
 
       const glow = context.createRadialGradient(
         width / 2,
@@ -1677,33 +1155,6 @@ export default function Home() {
         }
         context.fill();
       }
-
-      for (const packet of visualPacketsRef.current) {
-        if (!pausedRef.current) packet.progress += packet.speed * (0.78 + intensityRef.current * 0.004);
-        if (packet.progress < 0) continue;
-        const depth = clamp(packet.progress * (1 - packet.distance * 0.12), 0.006, 1.08);
-        const point = project(packet.lane, depth);
-        const alpha = clamp(0.14 + depth * 0.88, 0, 1);
-        const side = Math.max(3.2, (11 + packet.mass * 25) * point.scale);
-        const trailStart = project(packet.lane, clamp(depth - 0.075 - packet.distance * 0.025, 0, 1));
-        const color = tones[packet.tone];
-        context.strokeStyle = `rgba(${color.rgb}, ${alpha * 0.24})`;
-        context.lineWidth = Math.max(0.55, side * 0.06);
-        context.beginPath();
-        context.moveTo(trailStart.x, trailStart.y);
-        context.lineTo(point.x, point.y);
-        context.stroke();
-        drawPacketCube(
-          point.x,
-          point.y,
-          side,
-          packet.tone,
-          alpha,
-          packet.code,
-          depth > 0.52 && (!compact || packet.mass > 1.45),
-        );
-      }
-      visualPacketsRef.current = visualPacketsRef.current.filter((packet) => packet.progress <= 1.08);
 
       for (const wave of shockwavesRef.current) {
         if (!pausedRef.current) {
@@ -2307,40 +1758,6 @@ export default function Home() {
     return "SYNTHETIC FALLBACK";
   }, [sourceHealth]);
 
-  const internetWeather = useMemo(() => {
-    const liveSources = sourceKeys.filter((source) => sourceHealth[source] === "live").length;
-    const offlineSources = sourceKeys.filter((source) => sourceHealth[source] === "offline").length;
-    const recent = events.slice(0, 12);
-    const averageMagnitude = recent.length
-      ? recent.reduce((total, event) => total + event.magnitude, 0) / recent.length
-      : 18;
-    const atlasEvents = recent.filter((event) => event.source === "ATLAS");
-    const latencyDepth = atlasEvents.length
-      ? atlasEvents.reduce((total, event) => total + event.magnitude, 0) / atlasEvents.length
-      : 24;
-    const routeFlux = recent.filter((event) => event.source === "RIS").length;
-    const pressure = clamp(
-      infrastructure.risk * 0.74 + offlineSources * 5 + averageMagnitude * 0.16,
-      0,
-      100,
-    );
-    const state =
-      pressure >= 70
-        ? "INFRASTRUCTURE STORM"
-        : pressure >= 42
-          ? "ROUTE TURBULENCE"
-          : pressure >= 22
-            ? "ACTIVE CURRENT"
-            : "CLEAR FLOW";
-    return {
-      state,
-      pressure: Math.round(pressure),
-      density: Math.round(clamp(18 + recent.length * 4 + averageMagnitude * 0.34, 0, 100)),
-      depth: Math.round(clamp(latencyDepth, 0, 100)),
-      flux: Math.round(clamp(routeFlux * 17 + liveSources * 3, 0, 100)),
-    };
-  }, [events, infrastructure.risk, sourceHealth]);
-
   const latest = events[0];
   const activeVoiceName =
     voiceEngine === "piper"
@@ -2397,33 +1814,19 @@ export default function Home() {
 
       <section id="experience" className="experience" aria-label="Live internet signal experience">
         <div className="hero-copy">
-          <p className="eyebrow">LIVE AUDIOVISUAL INTERNET OBSERVATORY</p>
+          <p className="eyebrow">PUBLIC INTERNET OBSERVATORY / LIVE</p>
           <h1>
-            ETHERLANE
-            <span>STAND INSIDE THE INTERNET</span>
+            STAND INSIDE
+            <span>THE FLOW.</span>
           </h1>
           <p className="hero-intro">
-            Public signals become packet traffic, route architecture and weather. No payloads. No
-            surveillance. Only the shape of the flow, translated into light, space and sound.
+            Routes shift. Measurements return. Code, knowledge, conversations and public ledger
+            packets cross the network. The invisible internet becomes light, motion and sound.
           </p>
         </div>
 
-        <div className={`weather-hud pressure-${internetWeather.pressure >= 70 ? "high" : "normal"}`}>
-          <div className="weather-heading">
-            <span>NOW OVER THE NETWORK</span>
-            <strong>{internetWeather.state}</strong>
-            <small>{internetWeather.pressure}% PRESSURE</small>
-          </div>
-          <div className="sonification-map" aria-label="Live data translation">
-            <div><span>LATENCY</span><strong>DISTANCE</strong><i style={{ "--level": `${internetWeather.depth}%` } as CSSProperties} /></div>
-            <div><span>VOLUME</span><strong>DENSITY</strong><i style={{ "--level": `${internetWeather.density}%` } as CSSProperties} /></div>
-            <div><span>ROUTES</span><strong>ARCHITECTURE</strong><i style={{ "--level": `${internetWeather.flux}%` } as CSSProperties} /></div>
-            <div><span>OUTAGES</span><strong>WEATHER</strong><i style={{ "--level": `${internetWeather.pressure}%` } as CSSProperties} /></div>
-          </div>
-        </div>
-
         <div className="visualizer-switch" aria-label="Choose visualization">
-          <span>OBSERVATION MODE</span>
+          <span>VISUAL FIELD</span>
           <div>
             {visualizations.map((option) => (
               <button
@@ -3178,22 +2581,20 @@ export default function Home() {
                 <span>01</span>
                 <h3>WHAT YOU SEE</h3>
                 <p>
-                  Public signals become physical packet cubes on an infinite highway. Latency
-                  creates distance, traffic creates density, routing changes build new
-                  architecture and infrastructure disruption becomes red network weather. Switch
-                  between the highway, living routes and matrix-like weather. Mobile uses a
-                  lighter 24-frame profile.
+                  Six public signal families and a live infrastructure-health channel become a
+                  flowing highway, a moving neural network or matrix-like packet code. Every
+                  message forms a fresh multi-hop path. Mobile uses a lighter 24-frame profile.
                 </p>
               </section>
               <section>
                 <span>02</span>
                 <h3>WHAT YOU HEAR</h3>
                 <p>
-                  One stable deep ground tone anchors the world. Routing, latency, code,
-                  conversation, ledger and infrastructure events change spectral colour, mass,
-                  space and rhythm without uncontrolled pitch jumps. A sparse observer voice names
-                  what passes. Optional binaural modes place a different carrier in each ear for a
-                  headphone meditation field.
+                  An evolving ambient pad moves gradually through the selected scale while routing,
+                  latency, code, conversation, ledger and infrastructure events add spatial
+                  voices. Piper neural speech can use full signal descriptions or sparse dream
+                  phrases, passing through true convolution reverb. Optional binaural modes place
+                  a different carrier in each ear for a headphone meditation field.
                 </p>
               </section>
               <section>
@@ -3208,7 +2609,7 @@ export default function Home() {
               </section>
             </div>
             <button className="enter-button" type="button" onClick={() => setShowAbout(false)}>
-              RETURN TO THE OBSERVATORY
+              RETURN TO THE FLOW
             </button>
           </article>
         </div>
