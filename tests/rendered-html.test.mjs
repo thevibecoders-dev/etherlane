@@ -52,7 +52,7 @@ test("server-renders the Etherlane experience and metadata", async () => {
   assert.match(html, /SIGNAL SYNTH/);
   assert.match(html, /VISITORS/);
   assert.match(html, /LISTENERS/);
-  assert.match(html, /0\.2\.0/);
+  assert.match(html, /0\.2\.1/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|VibeVeilig/i);
 });
 
@@ -82,7 +82,7 @@ test("counts an anonymous live audience without persistent tracking", async () =
   const live = await heartbeat.json();
   assert.equal(live.visitors, 1);
   assert.equal(live.listeners, 1);
-  assert.equal(live.version, "0.2.0");
+  assert.equal(live.version, "0.2.1");
   assert.equal(live.ephemeral, true);
 
   const departure = await worker.fetch(
@@ -181,9 +181,15 @@ test("expands both routing vocabulary and signal-driven visual forms", async () 
   assert.match(page, /drawNeural/);
   assert.match(page, /drawMatrix/);
   assert.match(page, /route:\s*number\[\]/);
-  assert.match(page, /node\.x \+= node\.vx/);
-  assert.match(page, /packet\.route\.forEach/);
-  assert.match(page, /routeProgress/);
+  assert.match(page, /const globeHubs/);
+  assert.match(page, /const globeLinks/);
+  assert.match(page, /const continentPaths/);
+  assert.match(page, /projectGlobePoint/);
+  assert.match(page, /drawSpherePath/);
+  assert.match(page, /quadraticCurveTo/);
+  assert.match(page, /const transmission/);
+  assert.match(page, /packet\.progress \+= packet\.speed \* 0\.56/);
+  assert.match(page, /Rotating global route field/);
   assert.match(page, /infrastructureRiskRef/);
   assert.match(page, /1000 \/ 24/);
   assert.match(page, /devicePixelRatio = compact \? 1/);

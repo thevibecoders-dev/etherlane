@@ -133,7 +133,7 @@ const sourceKeys: Array<keyof SourceHealth> = [
 
 const visualizations: Array<{ value: VisualizationMode; label: string; hint: string }> = [
   { value: "flow", label: "FLOW", hint: "Signal highway" },
-  { value: "neural", label: "NEURAL", hint: "Node transmission" },
+  { value: "neural", label: "NEURAL", hint: "Rotating global route field" },
   { value: "matrix", label: "MATRIX", hint: "Packet code rain" },
 ];
 
@@ -847,13 +847,43 @@ export default function Home() {
     let devicePixelRatio = 1;
     let compact = window.matchMedia("(max-width: 720px)").matches;
     let lastFrame = 0;
-    const nodes = Array.from({ length: compact ? 18 : 34 }, (_, index) => ({
-      x: 0.08 + ((index * 47) % 83) / 100,
-      y: 0.12 + ((index * 31) % 74) / 100,
-      radius: 1.4 + (index % 4) * 0.45,
-      vx: (((index * 19) % 11) - 5) * 0.000014,
-      vy: (((index * 23) % 13) - 6) * 0.000012,
-    }));
+    const globeHubs = [
+      { name: "SAN FRANCISCO", lat: 37.77, lon: -122.42 },
+      { name: "NEW YORK", lat: 40.71, lon: -74.01 },
+      { name: "TORONTO", lat: 43.65, lon: -79.38 },
+      { name: "SAO PAULO", lat: -23.55, lon: -46.63 },
+      { name: "LONDON", lat: 51.51, lon: -0.13 },
+      { name: "AMSTERDAM", lat: 52.37, lon: 4.9 },
+      { name: "FRANKFURT", lat: 50.11, lon: 8.68 },
+      { name: "STOCKHOLM", lat: 59.33, lon: 18.07 },
+      { name: "MADRID", lat: 40.42, lon: -3.7 },
+      { name: "LAGOS", lat: 6.52, lon: 3.38 },
+      { name: "CAPE TOWN", lat: -33.92, lon: 18.42 },
+      { name: "CAIRO", lat: 30.04, lon: 31.24 },
+      { name: "NAIROBI", lat: -1.29, lon: 36.82 },
+      { name: "DUBAI", lat: 25.2, lon: 55.27 },
+      { name: "MUMBAI", lat: 19.08, lon: 72.88 },
+      { name: "SINGAPORE", lat: 1.35, lon: 103.82 },
+      { name: "HONG KONG", lat: 22.32, lon: 114.17 },
+      { name: "TOKYO", lat: 35.68, lon: 139.69 },
+      { name: "SEOUL", lat: 37.57, lon: 126.98 },
+      { name: "SYDNEY", lat: -33.87, lon: 151.21 },
+    ] as const;
+    const globeLinks = [
+      [0, 1], [0, 17], [0, 19], [1, 2], [1, 3], [1, 4], [2, 4], [3, 8],
+      [4, 5], [4, 7], [4, 11], [5, 6], [5, 15], [6, 8], [6, 13], [7, 18],
+      [8, 9], [9, 10], [9, 11], [9, 12], [11, 13], [12, 14], [13, 14],
+      [13, 15], [14, 15], [15, 16], [15, 19], [16, 17], [16, 18], [17, 18],
+      [17, 19],
+    ] as const;
+    const continentPaths: Array<Array<[number, number]>> = [
+      [[71, -165], [62, -145], [58, -127], [50, -124], [43, -117], [32, -115], [25, -105], [19, -98], [24, -82], [31, -81], [41, -70], [50, -60], [58, -66], [64, -78], [71, -105], [71, -165]],
+      [[12, -81], [4, -77], [-7, -78], [-18, -70], [-31, -71], [-54, -68], [-50, -55], [-35, -52], [-22, -44], [-8, -35], [4, -51], [12, -64], [12, -81]],
+      [[36, -10], [44, -9], [51, 1], [58, 8], [65, 25], [71, 45], [67, 75], [58, 95], [52, 120], [44, 141], [34, 135], [27, 120], [20, 108], [9, 105], [7, 80], [22, 69], [31, 55], [38, 42], [42, 28], [36, 20], [36, -10]],
+      [[36, -10], [31, 10], [20, 15], [8, 10], [-5, 12], [-18, 20], [-35, 18], [-35, 32], [-20, 42], [-5, 51], [12, 44], [28, 33], [36, 20], [36, -10]],
+      [[-11, 113], [-20, 115], [-35, 116], [-43, 146], [-28, 154], [-12, 143], [-11, 113]],
+      [[60, -52], [72, -42], [80, -20], [71, -17], [60, -35], [60, -52]],
+    ];
 
     for (let index = 0; index < (compact ? 24 : 74); index += 1) {
       particlesRef.current.push({
@@ -896,83 +926,226 @@ export default function Home() {
 
     const drawNeural = (time: number) => {
       const risk = infrastructureRiskRef.current;
-      context.fillStyle = risk >= 60 ? "rgba(18, 1, 5, 0.24)" : "rgba(3, 4, 9, 0.3)";
+      const rotation = (time * (compact ? 0.055 : 0.072)) % (Math.PI * 2);
+      const centerX = width * (compact ? 0.5 : 0.52);
+      const centerY = height * (compact ? 0.48 : 0.51);
+      const radius = Math.min(width * (compact ? 0.4 : 0.31), height * (compact ? 0.3 : 0.37));
+      const tilt = -0.13;
+
+      const projectGlobePoint = (lat: number, lon: number) => {
+        const latitude = lat * Math.PI / 180;
+        const longitude = lon * Math.PI / 180 + rotation;
+        const cosLatitude = Math.cos(latitude);
+        const sphereX = cosLatitude * Math.sin(longitude);
+        const sphereY = -Math.sin(latitude);
+        const sphereZ = cosLatitude * Math.cos(longitude);
+        const tiltedY = sphereY * Math.cos(tilt) - sphereZ * Math.sin(tilt);
+        const depth = sphereY * Math.sin(tilt) + sphereZ * Math.cos(tilt);
+        return {
+          x: centerX + sphereX * radius,
+          y: centerY + tiltedY * radius,
+          depth,
+        };
+      };
+
+      const quadraticPoint = (
+        start: { x: number; y: number },
+        control: { x: number; y: number },
+        end: { x: number; y: number },
+        progress: number,
+      ) => {
+        const inverse = 1 - progress;
+        return {
+          x: inverse * inverse * start.x + 2 * inverse * progress * control.x + progress * progress * end.x,
+          y: inverse * inverse * start.y + 2 * inverse * progress * control.y + progress * progress * end.y,
+        };
+      };
+
+      const routeGeometry = (
+        start: { x: number; y: number },
+        end: { x: number; y: number },
+        lift: number,
+      ) => {
+        const middleX = (start.x + end.x) / 2;
+        const middleY = (start.y + end.y) / 2;
+        const vectorX = middleX - centerX;
+        const vectorY = middleY - centerY;
+        const length = Math.max(1, Math.hypot(vectorX, vectorY));
+        return {
+          start,
+          end,
+          control: {
+            x: middleX + vectorX / length * lift,
+            y: middleY + vectorY / length * lift,
+          },
+        };
+      };
+
+      const drawSpherePath = (
+        points: Array<[number, number]>,
+        color: string,
+        lineWidth: number,
+      ) => {
+        let drawing = false;
+        context.strokeStyle = color;
+        context.lineWidth = lineWidth;
+        context.beginPath();
+        for (const [lat, lon] of points) {
+          const point = projectGlobePoint(lat, lon);
+          if (point.depth < -0.12) {
+            drawing = false;
+            continue;
+          }
+          if (!drawing) {
+            context.moveTo(point.x, point.y);
+            drawing = true;
+          } else {
+            context.lineTo(point.x, point.y);
+          }
+        }
+        context.stroke();
+      };
+
+      context.fillStyle = risk >= 65 ? "rgba(14,1,7,.34)" : "rgba(2,4,10,.36)";
       context.fillRect(0, 0, width, height);
       context.save();
       context.globalCompositeOperation = "screen";
-      if (!pausedRef.current) {
-        const motion = (compact ? 0.72 : 1) * (1 + risk / 55);
-        for (const node of nodes) {
-          node.x += node.vx * motion;
-          node.y += node.vy * motion;
-          if (node.x < 0.045 || node.x > 0.955) node.vx *= -1;
-          if (node.y < 0.08 || node.y > 0.92) node.vy *= -1;
-          node.x = clamp(node.x, 0.04, 0.96);
-          node.y = clamp(node.y, 0.07, 0.93);
+
+      const fieldGlow = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius * 1.48);
+      fieldGlow.addColorStop(0, risk >= 70 ? "rgba(255,61,82,.18)" : "rgba(51,162,255,.2)");
+      fieldGlow.addColorStop(0.54, "rgba(91,77,255,.065)");
+      fieldGlow.addColorStop(1, "rgba(0,0,0,0)");
+      context.fillStyle = fieldGlow;
+      context.fillRect(centerX - radius * 1.55, centerY - radius * 1.55, radius * 3.1, radius * 3.1);
+
+      const globeFill = context.createRadialGradient(
+        centerX - radius * 0.28,
+        centerY - radius * 0.32,
+        radius * 0.05,
+        centerX,
+        centerY,
+        radius,
+      );
+      globeFill.addColorStop(0, "rgba(87,228,255,.09)");
+      globeFill.addColorStop(0.68, "rgba(65,80,210,.035)");
+      globeFill.addColorStop(1, "rgba(2,4,14,.01)");
+      context.fillStyle = globeFill;
+      context.beginPath();
+      context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      context.fill();
+
+      const latitudeLines = compact ? [-60, -30, 0, 30, 60] : [-75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 75];
+      for (const latitude of latitudeLines) {
+        const points = Array.from({ length: compact ? 37 : 73 }, (_, index) => [
+          latitude,
+          -180 + index * (compact ? 10 : 5),
+        ] as [number, number]);
+        drawSpherePath(points, risk >= 70 ? "rgba(255,100,105,.11)" : "rgba(87,228,255,.105)", 0.5);
+      }
+      const longitudeStep = compact ? 30 : 20;
+      for (let longitude = -180; longitude < 180; longitude += longitudeStep) {
+        const points = Array.from({ length: compact ? 19 : 37 }, (_, index) => [
+          -90 + index * (compact ? 10 : 5),
+          longitude,
+        ] as [number, number]);
+        drawSpherePath(points, "rgba(151,105,255,.09)", 0.5);
+      }
+
+      for (const continent of continentPaths) {
+        drawSpherePath(
+          continent,
+          risk >= 70 ? "rgba(255,120,126,.52)" : "rgba(142,235,255,.48)",
+          compact ? 0.8 : 1.05,
+        );
+      }
+
+      context.strokeStyle = risk >= 70 ? "rgba(255,100,105,.52)" : "rgba(112,224,255,.46)";
+      context.lineWidth = compact ? 0.8 : 1.15;
+      context.shadowColor = risk >= 70 ? "#ff6469" : "#57e4ff";
+      context.shadowBlur = compact ? 0 : 18;
+      context.beginPath();
+      context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      context.stroke();
+      context.shadowBlur = 0;
+
+      const projectedHubs = globeHubs.map((hub) => ({ ...hub, ...projectGlobePoint(hub.lat, hub.lon) }));
+      for (let linkIndex = 0; linkIndex < globeLinks.length; linkIndex += 1) {
+        const [fromIndex, toIndex] = globeLinks[linkIndex];
+        const start = projectedHubs[fromIndex];
+        const end = projectedHubs[toIndex];
+        if (start.depth < -0.08 || end.depth < -0.08) continue;
+        const distance = Math.hypot(end.x - start.x, end.y - start.y);
+        const route = routeGeometry(start, end, radius * 0.08 + distance * 0.18);
+        const alpha = 0.1 + Math.min(start.depth, end.depth) * 0.17;
+        context.strokeStyle = risk >= 70 && linkIndex % 3 !== 0
+          ? `rgba(255,100,105,${alpha})`
+          : `rgba(87,228,255,${alpha})`;
+        context.lineWidth = compact ? 0.55 : 0.7;
+        context.beginPath();
+        context.moveTo(route.start.x, route.start.y);
+        context.quadraticCurveTo(route.control.x, route.control.y, route.end.x, route.end.y);
+        context.stroke();
+
+        if (!compact || linkIndex % 2 === 0) {
+          const transmission = (time * (0.09 + (linkIndex % 4) * 0.012) + linkIndex * 0.071) % 1;
+          const pulse = quadraticPoint(route.start, route.control, route.end, transmission);
+          context.fillStyle = linkIndex % 5 === 0 ? "rgba(255,204,112,.84)" : "rgba(141,241,255,.82)";
+          context.beginPath();
+          context.arc(pulse.x, pulse.y, compact ? 0.9 : 1.35, 0, Math.PI * 2);
+          context.fill();
         }
       }
-      for (let index = 0; index < nodes.length; index += 1) {
-        const node = nodes[index];
-        const next = nodes[(index + 5 + (index % 3)) % nodes.length];
-        context.strokeStyle =
-          risk >= 70
-            ? `rgba(255, 100, 105, ${compact ? 0.07 : 0.11})`
-            : `rgba(87, 228, 255, ${compact ? 0.055 : 0.085})`;
-        context.lineWidth = 0.55;
+
+      projectedHubs.forEach((hub, index) => {
+        if (hub.depth < -0.12) return;
+        const pulse = 0.58 + Math.sin(time * 1.25 + index * 1.7) * 0.28;
+        const radiusScale = compact ? 1.2 : 1.5 + Math.max(0, hub.depth) * 1.7;
+        context.fillStyle = risk >= 70 && index % 3 !== 0
+          ? `rgba(255,100,105,${pulse})`
+          : index % 4 === 0
+            ? `rgba(255,190,91,${pulse})`
+            : `rgba(126,238,255,${pulse})`;
         context.beginPath();
-        context.moveTo(node.x * width, node.y * height);
-        context.lineTo(next.x * width, next.y * height);
-        context.stroke();
-      }
-      for (const packet of visualPacketsRef.current) {
-        if (packet.progress < 0) continue;
-        const alpha = clamp((1.08 - packet.progress) * 0.62, 0.05, 0.62);
-        const color = tones[packet.tone];
-        context.strokeStyle = `rgba(${color.rgb}, ${alpha})`;
-        context.lineWidth = packet.tone === "coral" ? 1.25 : 0.75;
-        context.beginPath();
-        packet.route.forEach((nodeIndex, routeIndex) => {
-          const node = nodes[nodeIndex % nodes.length];
-          if (routeIndex === 0) context.moveTo(node.x * width, node.y * height);
-          else context.lineTo(node.x * width, node.y * height);
-        });
-        context.stroke();
-      }
-      for (let index = 0; index < nodes.length; index += 1) {
-        const node = nodes[index];
-        const pulse = 0.35 + Math.sin(time * (1.4 + risk / 90) + index) * 0.18;
-        context.fillStyle =
-          risk >= 70 && index % 3 !== 0
-            ? `rgba(255, 100, 105, ${pulse + 0.12})`
-            : index % 3 === 0
-              ? `rgba(151, 105, 255, ${pulse})`
-              : `rgba(87, 228, 255, ${pulse})`;
-        context.beginPath();
-        context.arc(node.x * width, node.y * height, node.radius + pulse * 2.4, 0, Math.PI * 2);
+        context.arc(hub.x, hub.y, radiusScale, 0, Math.PI * 2);
         context.fill();
-      }
+      });
+
       for (const packet of visualPacketsRef.current) {
-        if (!pausedRef.current) packet.progress += packet.speed;
+        if (!pausedRef.current) packet.progress += packet.speed * 0.56;
+        if (packet.progress > 1.04) packet.progress = -0.06;
         if (packet.progress < 0) continue;
-        const routeProgress = clamp(packet.progress, 0, 0.9999) * (packet.route.length - 1);
-        const routeIndex = Math.floor(routeProgress);
-        const segmentProgress = routeProgress - routeIndex;
-        const from = nodes[packet.route[routeIndex] % nodes.length];
-        const to = nodes[packet.route[Math.min(routeIndex + 1, packet.route.length - 1)] % nodes.length];
-        const x = (from.x + (to.x - from.x) * segmentProgress) * width;
-        const y = (from.y + (to.y - from.y) * segmentProgress) * height;
+        const fromIndex = packet.from % globeHubs.length;
+        let toIndex = packet.to % globeHubs.length;
+        if (toIndex === fromIndex) toIndex = (toIndex + 7) % globeHubs.length;
+        const start = projectedHubs[fromIndex];
+        const end = projectedHubs[toIndex];
+        if (start.depth < -0.08 || end.depth < -0.08) continue;
+        const distance = Math.hypot(end.x - start.x, end.y - start.y);
+        const route = routeGeometry(start, end, radius * 0.12 + distance * 0.22);
         const color = tones[packet.tone];
-        context.fillStyle = color.hex;
+        context.strokeStyle = `rgba(${color.rgb},${packet.tone === "coral" ? 0.72 : 0.46})`;
+        context.lineWidth = packet.tone === "coral" ? 1.45 : 0.9;
         context.beginPath();
-        context.arc(x, y, compact ? 2.3 : 3.2, 0, Math.PI * 2);
-        context.fill();
-        if (!compact || visualPacketsRef.current.indexOf(packet) >= visualPacketsRef.current.length - 5) {
-          context.font = `${compact ? 7 : 9}px monospace`;
-          context.fillStyle = `rgba(${color.rgb}, .72)`;
-          context.fillText(packet.code, x + 8, y - 7);
+        context.moveTo(route.start.x, route.start.y);
+        context.quadraticCurveTo(route.control.x, route.control.y, route.end.x, route.end.y);
+        context.stroke();
+
+        for (let trail = 4; trail >= 0; trail -= 1) {
+          const trailProgress = clamp(packet.progress - trail * 0.018, 0, 1);
+          const pulse = quadraticPoint(route.start, route.control, route.end, trailProgress);
+          context.fillStyle = `rgba(${color.rgb},${0.18 + (4 - trail) * 0.18})`;
+          context.beginPath();
+          context.arc(pulse.x, pulse.y, compact ? 1.2 : 1.25 + (4 - trail) * 0.42, 0, Math.PI * 2);
+          context.fill();
+        }
+        if (!compact && visualPacketsRef.current.indexOf(packet) >= visualPacketsRef.current.length - 6) {
+          const labelPoint = quadraticPoint(route.start, route.control, route.end, clamp(packet.progress, 0, 1));
+          context.font = "8px monospace";
+          context.fillStyle = `rgba(${color.rgb},.68)`;
+          context.fillText(packet.code, labelPoint.x + 9, labelPoint.y - 7);
         }
       }
-      visualPacketsRef.current = visualPacketsRef.current.filter((packet) => packet.progress <= 1.08);
+
       context.restore();
     };
 
