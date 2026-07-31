@@ -47,6 +47,8 @@ voice. Its EL-01 Signal Synth quantizes those events into generative music.
 
 ## Privacy boundary
 
+- Ephemeral live visitor and listener totals use random per-tab heartbeats
+- Audience sessions exist only in server memory, expire after 45 seconds and never store IP addresses, cookies or browser fingerprints
 - Six public, read-only routing, measurement, knowledge, code, conversation and ledger feeds
 - One normalized infrastructure-health channel backed by official public status endpoints
 - Monitor failures remain `unknown`; they are never presented as an outage

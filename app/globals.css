@@ -1003,8 +1003,7 @@ button {
   box-shadow: 0 0 8px #74f6aa;
 }
 
-.footerbar p,
-.coordinates {
+.footerbar p {
   color: rgba(241, 239, 249, 0.27);
   font: 500 7px/1 var(--font-geist-mono), monospace;
   letter-spacing: 0.1em;
@@ -1014,8 +1013,53 @@ button {
   margin: 0 6px;
 }
 
-.coordinates {
+.audience-meter {
+  display: flex;
+  align-items: stretch;
   justify-self: end;
+  height: 26px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.025);
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.audience-meter > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.audience-meter > span:last-child {
+  border-right: 0;
+}
+
+.audience-meter strong {
+  color: rgba(241, 239, 249, 0.88);
+  font-size: 9px;
+  font-weight: 580;
+}
+
+.audience-meter small {
+  color: rgba(241, 239, 249, 0.35);
+  font-size: 6px;
+  line-height: 1;
+  letter-spacing: 0.1em;
+}
+
+.audience-meter i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(241, 239, 249, 0.22);
+}
+
+.audience-meter .has-listeners i {
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan);
+  animation: pulse 2s ease-in-out infinite;
 }
 
 .detail-overlay {
@@ -2273,8 +2317,17 @@ button {
     display: none;
   }
 
-  .coordinates {
-    font-size: 6px;
+  .audience-meter {
+    flex: 0 0 auto;
+    height: 30px;
+  }
+
+  .audience-meter > span {
+    padding: 0 6px;
+  }
+
+  .audience-meter small {
+    font-size: 5px;
   }
 
   .event-copy {

@@ -22,6 +22,7 @@ import {
   neuralVoicePresets,
   type NeuralVoiceName,
 } from "./neural-voice";
+import { APP_VERSION } from "./app-version";
 
 type SignalSource =
   | "RIS"
@@ -40,6 +41,12 @@ type VoiceEngine = "piper" | "device";
 type VoiceDensity = "dream" | "full";
 type SynthPatch = "ether-bloom" | "glass-orbit" | "choir-void" | "deep-rest" | "signal-storm";
 type KickLightColor = "violet" | "cyan" | "amber" | "coral" | "white";
+
+type AudienceSnapshot = {
+  visitors: number;
+  listeners: number;
+  version: string;
+};
 
 type SignalEvent = {
   id: string;
@@ -382,6 +389,8 @@ export default function Home() {
   const lastVoiceRef = useRef(0);
   const pausedRef = useRef(false);
   const audioEnabledRef = useRef(false);
+  const audienceSessionRef = useRef("");
+  const audienceListeningRef = useRef(false);
   const voiceEngineRef = useRef<VoiceEngine>("piper");
   const neuralVoiceNameRef = useRef<NeuralVoiceName>("hfc-female");
   const voiceDensityRef = useRef<VoiceDensity>("dream");
@@ -479,6 +488,31 @@ export default function Home() {
   const [showAbout, setShowAbout] = useState(false);
   const [showSynth, setShowSynth] = useState(false);
   const [visualization, setVisualization] = useState<VisualizationMode>("flow");
+  const [audience, setAudience] = useState<AudienceSnapshot>({
+    visitors: 1,
+    listeners: 0,
+    version: APP_VERSION,
+  });
+
+  const synchronizeAudience = useCallback(async () => {
+    if (!audienceSessionRef.current) audienceSessionRef.current = crypto.randomUUID();
+    try {
+      const response = await fetch("/api/audience", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: audienceSessionRef.current,
+          listening: audienceListeningRef.current,
+        }),
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+      const snapshot = (await response.json()) as AudienceSnapshot;
+      setAudience(snapshot);
+    } catch {
+      // Audience telemetry is decorative and never interrupts the experience.
+    }
+  }, []);
 
   useEffect(() => {
     pausedRef.current = paused;
@@ -491,6 +525,38 @@ export default function Home() {
   useEffect(() => {
     audioEnabledRef.current = audioEnabled;
   }, [audioEnabled]);
+
+  useEffect(() => {
+    audienceListeningRef.current = audioEnabled || musicEnabled || binauralEnabled;
+    void synchronizeAudience();
+  }, [audioEnabled, binauralEnabled, musicEnabled, synchronizeAudience]);
+
+  useEffect(() => {
+    void synchronizeAudience();
+    const heartbeat = window.setInterval(() => {
+      void synchronizeAudience();
+    }, 15_000);
+    const refresh = () => {
+      if (document.visibilityState === "visible") void synchronizeAudience();
+    };
+    const leave = () => {
+      if (!audienceSessionRef.current) return;
+      void fetch("/api/audience", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: audienceSessionRef.current }),
+        keepalive: true,
+      });
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("pagehide", leave);
+    return () => {
+      window.clearInterval(heartbeat);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("pagehide", leave);
+      leave();
+    };
+  }, [synchronizeAudience]);
 
   useEffect(() => {
     voiceEngineRef.current = voiceEngine;
@@ -2008,7 +2074,24 @@ export default function Home() {
           PUBLIC ROUTING + MEASUREMENT DATA ONLY <span>·</span> NO PRIVATE TRAFFIC
           <span>·</span> ZERO RETENTION
         </p>
-        <span className="coordinates">52.37° N / 4.90° E</span>
+        <div
+          className="audience-meter"
+          aria-live="polite"
+          title="Anonymous live totals only. No cookies, IP storage or persistent tracking."
+        >
+          <span>
+            <strong>{audience.visitors}</strong>
+            <small>VISITORS</small>
+          </span>
+          <span className={audience.listeners > 0 ? "has-listeners" : ""}>
+            <i aria-hidden="true" />
+            <strong>{audience.listeners}</strong>
+            <small>LISTENERS</small>
+          </span>
+          <span>
+            <small>V{audience.version}</small>
+          </span>
+        </div>
       </footer>
 
       {selected && (

@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
-async function render() {
+async function loadWorker() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
+  return worker;
+}
 
+async function render() {
+  const worker = await loadWorker();
   return worker.fetch(
     new Request("http://localhost/", {
       headers: { accept: "text/html" },
@@ -46,15 +50,62 @@ test("server-renders the Etherlane experience and metadata", async () => {
   assert.match(html, /MATRIX/);
   assert.match(html, /AMBIENT SYNTH/);
   assert.match(html, /SIGNAL SYNTH/);
+  assert.match(html, /VISITORS/);
+  assert.match(html, /LISTENERS/);
+  assert.match(html, /0\.1\.0/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|VibeVeilig/i);
 });
 
+test("counts an anonymous live audience without persistent tracking", async () => {
+  const worker = await loadWorker();
+  const environment = {
+    ASSETS: {
+      fetch: async () => new Response("Not found", { status: 404 }),
+    },
+  };
+  const context = {
+    waitUntil() {},
+    passThroughOnException() {},
+  };
+  const sessionId = "7ee64ad0-3ac1-4f72-b8dd-f123a4b56789";
+  const heartbeat = await worker.fetch(
+    new Request("http://localhost/api/audience", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, listening: true }),
+    }),
+    environment,
+    context,
+  );
+  assert.equal(heartbeat.status, 200);
+  assert.match(heartbeat.headers.get("cache-control") ?? "", /no-store/);
+  const live = await heartbeat.json();
+  assert.equal(live.visitors, 1);
+  assert.equal(live.listeners, 1);
+  assert.equal(live.version, "0.1.0");
+  assert.equal(live.ephemeral, true);
+
+  const departure = await worker.fetch(
+    new Request("http://localhost/api/audience", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    }),
+    environment,
+    context,
+  );
+  const empty = await departure.json();
+  assert.equal(empty.visitors, 0);
+  assert.equal(empty.listeners, 0);
+});
+
 test("uses six activity feeds plus infrastructure health and never adds persistence", async () => {
-  const [page, layout, packageJson, infrastructureRoute] = await Promise.all([
+  const [page, layout, packageJson, infrastructureRoute, audienceRoute] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
     readFile(new URL("../app/api/infrastructure/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/audience/route.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /wss:\/\/ris-live\.ripe\.net\/v1\/ws/);
@@ -85,6 +136,16 @@ test("uses six activity feeds plus infrastructure health and never adds persiste
   assert.match(infrastructureRoute, /state:\s*"unknown",\s*description:\s*"Monitor unavailable"/);
   assert.match(infrastructureRoute, /stale-while-revalidate=120/);
   assert.doesNotMatch(infrastructureRoute, /state:\s*"outage",\s*description:\s*"Monitor unavailable"/);
+  assert.match(page, /fetch\("\/api\/audience"/);
+  assert.match(page, /crypto\.randomUUID\(\)/);
+  assert.match(page, /keepalive:\s*true/);
+  assert.match(audienceRoute, /SESSION_TTL_MS = 45_000/);
+  assert.match(audienceRoute, /new Map<string, AudienceSession>/);
+  assert.match(audienceRoute, /private, no-store/);
+  assert.doesNotMatch(
+    audienceRoute,
+    /request\.headers|x-forwarded-for|user-agent|document\.cookie|localStorage|database/i,
+  );
 
   await assert.rejects(
     access(new URL("../app/_sites-preview/SkeletonPreview.tsx", import.meta.url)),
