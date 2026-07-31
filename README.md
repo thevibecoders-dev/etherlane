@@ -9,8 +9,8 @@ voice. Its EL-01 Signal Synth quantizes those events into generative music.
 
 - Continuously evolving modal pads across 24 harmonic states, inversions and voicings
 - Selectable ambient, 126 BPM EDM, 132 BPM techno and broken 112 BPM IDM modes
-- Procedural kick, snare, open and closed hats, percussion and bass generated entirely with Web Audio
-- An unbounded phrase counter creates kick dropouts, air breaks, rolling hats, fills, syncopation and IDM microtiming without returning to a fixed 32-step loop
+- A forward, presence-shaped procedural kick, snare, open and closed hats, percussion and bass layer generated entirely with Web Audio
+- An unbounded phrase counter creates kick dropouts, air breaks, rolling hats, fills, syncopation and IDM microtiming without returning to a fixed 32-step loop, while a minimum pulse keeps every phrase grounded
 - Six data-controlled modular voices follow compact scale-bound motifs, with rare octave changes and subtle microtuning while gate, waveform, filter, delay, feedback, reverb and stereo position remain fluid
 - Public signal identity, energy, source and sequence steer rhythm, timbre, density and harmonic movement
 - Source-health harmony with smooth crossfades and signal-led chord advances

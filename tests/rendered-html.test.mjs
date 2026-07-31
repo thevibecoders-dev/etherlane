@@ -178,6 +178,8 @@ test("ships an immersive generative synth without recording or persistence", asy
   assert.doesNotMatch(engine, /this\.rhythmStep\s*=\s*\(this\.rhythmStep \+ 1\) % 32/);
   assert.match(engine, /frequency\.exponentialRampToValueAtTime/);
   assert.match(engine, /drumNoiseBuffer/);
+  assert.match(engine, /drumBus\.gain\.value = 0\.92/);
+  assert.match(engine, /drumBus\.connect\(drumPresence\)\.connect\(limiter\)/);
   assert.match(engine, /applyDataModulation/);
   assert.match(engine, /setTargetAtTime\(this\.modulation\.driftRate/);
   assert.match(engine, /0\.43/);

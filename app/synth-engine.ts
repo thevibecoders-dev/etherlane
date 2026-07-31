@@ -760,6 +760,7 @@ export class EtherlaneSynth {
     const padBus = context.createGain();
     const accentBus = context.createGain();
     const drumBus = context.createGain();
+    const drumPresence = context.createBiquadFilter();
     const padFilter = context.createBiquadFilter();
 
     const reverb = context.createConvolver();
@@ -785,7 +786,10 @@ export class EtherlaneSynth {
     padFilter.type = "lowpass";
     padFilter.frequency.value = this.warmthHz();
     padFilter.Q.value = 0.6;
-    drumBus.gain.value = 0.72;
+    drumBus.gain.value = 0.92;
+    drumPresence.type = "highshelf";
+    drumPresence.frequency.value = 4200;
+    drumPresence.gain.value = 3.2;
 
     reverb.buffer = makeHallImpulse(context, 4.6, 2.6);
     reverbSend.gain.value = (this.settings.space / 100) * 0.9;
@@ -809,7 +813,9 @@ export class EtherlaneSynth {
     padBus.connect(padFilter);
     padFilter.connect(highShelf); // dry pad
     accentBus.connect(highShelf); // dry accents
-    drumBus.connect(highShelf); // dry procedural drums
+    // Keep the transient layer forward: the warm master shelf is ideal for
+    // pads, but used to hide hats and percussion.
+    drumBus.connect(drumPresence).connect(limiter);
 
     // Sends (post-filter for pad, direct for accents via a tap).
     padFilter.connect(reverbSend);
@@ -1140,7 +1146,7 @@ export class EtherlaneSynth {
     const envelope = context.createGain();
     const body = context.createBiquadFilter();
     const duration = mode === "techno" ? 0.38 : mode === "edm" ? 0.3 : 0.22;
-    const level = clamp(0.42 + accent * 0.3 + this.rhythmEnergy * 0.1, 0.42, 0.78);
+    const level = clamp(0.5 + accent * 0.34 + this.rhythmEnergy * 0.12, 0.52, 0.9);
 
     oscillator.type = mode === "idm" ? "triangle" : "sine";
     oscillator.frequency.setValueAtTime(mode === "edm" ? 178 : 154, at);
@@ -1202,8 +1208,8 @@ export class EtherlaneSynth {
     const filter = this.context.createBiquadFilter();
     const envelope = this.context.createGain();
     const panner = this.context.createStereoPanner();
-    const duration = kind === "snare" ? 0.19 : kind === "open-hat" ? 0.24 : 0.048;
-    const base = kind === "snare" ? 0.18 : kind === "open-hat" ? 0.095 : 0.075;
+    const duration = kind === "snare" ? 0.2 : kind === "open-hat" ? 0.3 : 0.065;
+    const base = kind === "snare" ? 0.24 : kind === "open-hat" ? 0.17 : 0.14;
 
     source.buffer = this.drumNoiseBuffer;
     source.playbackRate.value = kind === "snare" ? 0.82 : 1.2;
@@ -1216,7 +1222,7 @@ export class EtherlaneSynth {
             6200,
             9800,
           );
-    filter.Q.value = kind === "snare" ? 0.7 : 0.45;
+    filter.Q.value = kind === "snare" ? 0.85 : 0.6;
     panner.pan.value =
       kind === "snare" ? 0.05 : ((this.rhythmStep + this.rhythmSeed) % 5 - 2) * 0.16;
     envelope.gain.setValueAtTime(base * accent, at);
@@ -1244,11 +1250,11 @@ export class EtherlaneSynth {
     filter.frequency.value = pitch * 1.3;
     filter.Q.value = 2.8;
     panner.pan.value = ((this.rhythmSeed + step * 13) % 17) / 8 - 1;
-    envelope.gain.setValueAtTime(0.045 * accent, at);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, at + 0.11);
+    envelope.gain.setValueAtTime(0.11 * accent, at);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, at + 0.15);
     oscillator.connect(filter).connect(envelope).connect(panner).connect(this.drumBus);
     oscillator.start(at);
-    oscillator.stop(at + 0.13);
+    oscillator.stop(at + 0.17);
   }
 
   private triggerBass(
@@ -1273,7 +1279,7 @@ export class EtherlaneSynth {
     );
     filter.frequency.exponentialRampToValueAtTime(120, at + duration);
     filter.Q.value = mode === "edm" ? 3.2 : 1.7;
-    envelope.gain.setValueAtTime(0.08 * accent, at);
+    envelope.gain.setValueAtTime(0.105 * accent, at);
     envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration);
     oscillator.connect(filter).connect(envelope).connect(this.drumBus);
     oscillator.start(at);

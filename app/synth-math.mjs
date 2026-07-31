@@ -113,6 +113,9 @@ export function rhythmStepFor(mode, step, seed = 0, energy = 0.5) {
       chance < 0.66 + density * 0.28;
     cell.percussion =
       (index >= 24 || breakSection) && chance < 0.12 + safeEnergy * 0.44;
+    // A quiet phrase may lose kicks, never its time reference.
+    if (index % 4 === 2) cell.closedHat = true;
+    if (index % 8 === 7) cell.percussion = true;
     cell.synth = [1, 9, 17, 25].includes(index) || (breakSection && index % 6 === 3);
     cell.accent = index === 0 ? 1 : 0.68 + safeEnergy * 0.24;
     cell.gate = 0.24 + ((variation >>> 10) % 58) / 100;
@@ -135,6 +138,7 @@ export function rhythmStepFor(mode, step, seed = 0, energy = 0.5) {
     cell.percussion =
       (index + phraseSeed) % (section % 2 ? 5 : 7) === 0 ||
       chance < 0.06 + safeEnergy * 0.21;
+    if (index % 4 === 2) cell.closedHat = true;
     cell.bass =
       (rolling ? [3, 6, 11, 14, 22, 27, 30].includes(index) : index % 8 === 6) &&
       chance < 0.82;
@@ -164,7 +168,10 @@ export function rhythmStepFor(mode, step, seed = 0, energy = 0.5) {
   cell.openHat =
     [3, 13, 21, 29].includes((index + section) % 32) &&
     chance < 0.28 + safeEnergy * 0.5;
-  cell.percussion = chance < 0.16 + safeEnergy * 0.42;
+  cell.percussion =
+    chance < 0.16 + safeEnergy * 0.42 ||
+    index % 8 === ((phraseSeed >>> 9) % 8);
+  if (index % 4 === phraseSeed % 4) cell.closedHat = true;
   cell.bass =
     [2, 10, 17, 26].includes((index + section) % 32) ||
     (index % 8 === 7 && chance < 0.28 + density * 0.22);

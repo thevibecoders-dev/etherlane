@@ -203,6 +203,29 @@ test("signal energy creates deterministic but evolving drum details", () => {
   });
 });
 
+test("every electronic phrase keeps an audible rhythmic backbone", () => {
+  for (const mode of ["edm", "techno", "idm"]) {
+    for (let phrase = 0; phrase < 12; phrase += 1) {
+      const pattern = Array.from({ length: 32 }, (_, index) =>
+        rhythmStepFor(mode, phrase * 32 + index, 7613, 0.22),
+      );
+      assert.ok(pattern.filter((cell) => cell.kick).length >= 2);
+      assert.ok(pattern.filter((cell) => cell.closedHat || cell.openHat).length >= 8);
+      for (let start = 0; start < 32; start += 4) {
+        const pulse = pattern.slice(start, start + 4).some(
+          (cell) =>
+            cell.kick ||
+            cell.snare ||
+            cell.closedHat ||
+            cell.openHat ||
+            cell.percussion,
+        );
+        assert.ok(pulse, `${mode} phrase ${phrase} lost the pulse at step ${start}`);
+      }
+    }
+  }
+});
+
 test("public data maps to bounded and source-specific modular synthesis targets", () => {
   const base = { kind: "ROUTE EXCHANGE", magnitude: 72, tone: "violet", timestamp: 0 };
   const route = modulationForSignal({ ...base, source: "RIS" }, 44);
