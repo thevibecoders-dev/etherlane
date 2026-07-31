@@ -16,7 +16,7 @@ import {
   type SeaSeverity,
   type SeaSource,
 } from "./listening-sea-model";
-import { ListeningSeaVisual } from "./listening-sea-visual";
+import { ListeningSeaVisual } from "./listening-sea-visual-loader";
 
 type Health = "connecting" | "live" | "quiet" | "offline";
 type SourceHealth = Record<Exclude<SeaSource, "SYNTHETIC">, Health>;

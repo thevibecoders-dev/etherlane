@@ -27,7 +27,7 @@ test("builds Etherlane as the Listening Sea instead of the previous dashboard", 
   assert.match(css, /100dvh/);
   assert.match(layout, /og-listening-sea\.png/);
   assert.match(layout, /Hear the living Internet/);
-  assert.match(version, /1\.0\.1/);
+  assert.match(version, /1\.0\.2/);
 });
 
 test("uses live public observatories and labels non-live fallback honestly", async () => {
@@ -67,6 +67,24 @@ test("renders a mobile-aware temporal sea with submerged continents and live pat
   assert.match(scene, /app\.autoRender = !compact/);
   assert.match(scene, /renderTick % 2/);
   assert.doesNotMatch(scene, /localStorage|sessionStorage|indexedDB|document\.cookie/i);
+});
+
+test("uses a lightweight Canvas 2D renderer on mobile and lazy-loads PlayCanvas for desktop", async () => {
+  const [loader, mobile, page] = await Promise.all([
+    readFile(new URL("../app/listening-sea-visual-loader.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/listening-sea-mobile-visual.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(page, /listening-sea-visual-loader/);
+  assert.match(loader, /import\("\.\/listening-sea-visual"\)/);
+  assert.match(loader, /pointer: coarse/);
+  assert.match(mobile, /getContext\("2d"/);
+  assert.match(mobile, /desynchronized: true/);
+  assert.match(mobile, /requestAnimationFrame/);
+  assert.match(mobile, /topologyMesh/);
+  assert.match(mobile, /packetCodes/);
+  assert.doesNotMatch(mobile, /from "playcanvas"|new pc\./);
+  assert.doesNotMatch(mobile, /localStorage|sessionStorage|indexedDB|document\.cookie/i);
 });
 
 test("keeps a stable drone and bounded independent stereo delays", async () => {
