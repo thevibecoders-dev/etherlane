@@ -88,6 +88,10 @@ function mapPoint(latitude: number, longitude: number) {
   return new pc.Vec3((longitude / 180) * 15.5, 0.035, -18 + (latitude / 90) * 10.5);
 }
 
+function portraitPoint(point: pc.Vec3) {
+  return new pc.Vec3(point.x * 0.38, point.y, -10.5 + (point.z + 18) * 0.68);
+}
+
 function positionFor(event: SeaEvent, destination = false) {
   const seed = hashText(`${event.id}:${destination ? "destination" : "origin"}`);
   const latitude = destination ? event.destinationLatitude : event.latitude;
@@ -122,14 +126,16 @@ function pointOnRoute(start: pc.Vec3, end: pc.Vec3, progress: number) {
   );
 }
 
-function continentPositions() {
+function continentPositions(compact = false) {
   const topology = landTopology as unknown as Topology;
   const geometry = topologyMesh(topology, topology.objects.land as never);
   const positions: number[] = [];
   for (const line of geometry.coordinates) {
     for (let index = 1; index < line.length; index += 1) {
-      const previous = mapPoint(line[index - 1][1], line[index - 1][0]);
-      const current = mapPoint(line[index][1], line[index][0]);
+      const previousMap = mapPoint(line[index - 1][1], line[index - 1][0]);
+      const currentMap = mapPoint(line[index][1], line[index][0]);
+      const previous = compact ? portraitPoint(previousMap) : previousMap;
+      const current = compact ? portraitPoint(currentMap) : currentMap;
       positions.push(previous.x, previous.y, previous.z, current.x, current.y, current.z);
     }
   }
@@ -184,27 +190,29 @@ export function ListeningSeaVisual({
     });
     app.setCanvasFillMode(pc.FILLMODE_NONE);
     app.setCanvasResolution(pc.RESOLUTION_AUTO);
-    app.graphicsDevice.maxPixelRatio = compact ? 1 : Math.min(window.devicePixelRatio || 1, 1.4);
+    app.graphicsDevice.maxPixelRatio = compact ? 0.78 : Math.min(window.devicePixelRatio || 1, 1.4);
+    app.autoRender = !compact;
+    app.renderNextFrame = true;
     app.scene.ambientLight = new pc.Color(0.018, 0.035, 0.08);
-    app.scene.exposure = 1.08;
+    app.scene.exposure = compact ? 1.3 : 1.08;
     app.scene.fog.type = pc.FOG_EXP2;
     app.scene.fog.color = new pc.Color(0.0015, 0.006, 0.018);
-    app.scene.fog.density = compact ? 0.031 : 0.024;
+    app.scene.fog.density = compact ? 0.022 : 0.024;
     app.start();
 
     const camera = new pc.Entity("LISTENER");
     camera.addComponent("camera", {
       clearColor: new pc.Color(0.001, 0.004, 0.014),
-      fov: compact ? 73 : 66,
+      fov: compact ? 68 : 66,
       nearClip: 0.05,
-      farClip: 120,
+      farClip: compact ? 72 : 120,
     });
-    camera.setPosition(0, compact ? 1.35 : 1.62, 7.4);
-    camera.lookAt(0, 0.15, -17);
+    camera.setPosition(0, compact ? 4.8 : 1.62, compact ? 5.6 : 7.4);
+    camera.lookAt(0, compact ? 0.02 : 0.15, compact ? -9.5 : -17);
     app.root.addChild(camera);
 
     let cameraFrame: pc.CameraFrame | null = null;
-    try {
+    if (!compact) try {
       cameraFrame = new pc.CameraFrame(app, camera.camera!);
       cameraFrame.rendering.renderTargetScale = compact ? 0.66 : 0.88;
       cameraFrame.rendering.toneMapping = pc.TONEMAP_ACES2;
@@ -226,11 +234,11 @@ export function ListeningSeaVisual({
     horizon.addComponent("light", {
       type: "omni",
       color: new pc.Color(0.08, 0.27, 1),
-      intensity: compact ? 5 : 7,
+      intensity: compact ? 8 : 7,
       range: 58,
       castShadows: false,
     });
-    horizon.setPosition(0, 0.4, -28);
+    horizon.setPosition(0, 0.4, compact ? -18 : -28);
     app.root.addChild(horizon);
 
     const dangerLight = new pc.Entity("OUTAGE PRESSURE");
@@ -241,7 +249,7 @@ export function ListeningSeaVisual({
       range: 45,
       castShadows: false,
     });
-    dangerLight.setPosition(0, -0.8, -14);
+    dangerLight.setPosition(0, -0.8, compact ? -9 : -14);
     app.root.addChild(dangerLight);
 
     const oceanMaterial = new pc.StandardMaterial();
@@ -254,28 +262,30 @@ export function ListeningSeaVisual({
     oceanMaterial.update();
     const ocean = new pc.Entity("LISTENING SEA");
     ocean.addComponent("render", { type: "plane", material: oceanMaterial });
-    ocean.setLocalScale(42, 1, 58);
-    ocean.setPosition(0, -0.06, -18);
+    ocean.setLocalScale(compact ? 14 : 42, 1, compact ? 38 : 58);
+    ocean.setPosition(0, -0.06, compact ? -10 : -18);
     app.root.addChild(ocean);
 
-    const worldMaterial = material(new pc.Color(0.08, 0.43, 0.82), compact ? 0.1 : 0.15, 1.2);
-    lineEntity(app, "SUBMERGED CONTINENTS", continentPositions(), worldMaterial);
+    const worldMaterial = material(new pc.Color(0.08, 0.43, 0.82), compact ? 0.22 : 0.15, compact ? 2.4 : 1.2);
+    lineEntity(app, "SUBMERGED CONTINENTS", continentPositions(compact), worldMaterial);
 
-    const currentMaterial = material(new pc.Color(0.1, 0.32, 0.78), 0.075, 1.1);
+    const currentMaterial = material(new pc.Color(0.1, 0.32, 0.78), compact ? 0.2 : 0.075, compact ? 2.1 : 1.1);
     const currents: Array<{ mesh: pc.Mesh; phase: number; lane: number }> = [];
-    const currentCount = compact ? 7 : 13;
+    const currentCount = compact ? 5 : 13;
     for (let lane = 0; lane < currentCount; lane += 1) {
       const current = lineEntity(app, `TIDAL CURRENT ${lane}`, [0, 0, 0, 0, 0, 0], currentMaterial, pc.PRIMITIVE_LINESTRIP);
       currents.push({ mesh: current.mesh, phase: seeded(lane, 3) * Math.PI * 2, lane });
     }
 
-    const dustMaterial = material(new pc.Color(0.18, 0.48, 1), 0.38, 2.4);
+    const dustMaterial = material(new pc.Color(0.18, 0.48, 1), compact ? 0.62 : 0.38, compact ? 3.2 : 2.4);
     const dust: Array<{ entity: pc.Entity; phase: number; speed: number; origin: pc.Vec3 }> = [];
-    const dustCount = compact ? 42 : 110;
+    const dustCount = compact ? 24 : 110;
     for (let index = 0; index < dustCount; index += 1) {
       const mote = new pc.Entity(`SUSPENDED BIT ${index}`);
       mote.addComponent("render", { type: "sphere", material: dustMaterial });
-      const origin = new pc.Vec3(seeded(index, 2) * 34 - 17, seeded(index, 5) * 3.6 - 1.1, -4 - seeded(index, 8) * 34);
+      const origin = compact
+        ? new pc.Vec3(seeded(index, 2) * 9 - 4.5, seeded(index, 5) * 3.1 - 0.55, -2 - seeded(index, 8) * 23)
+        : new pc.Vec3(seeded(index, 2) * 34 - 17, seeded(index, 5) * 3.6 - 1.1, -4 - seeded(index, 8) * 34);
       const size = 0.012 + seeded(index, 11) * 0.035;
       mote.setPosition(origin);
       mote.setLocalScale(size, size, size);
@@ -284,7 +294,7 @@ export function ListeningSeaVisual({
     }
 
     const ripples: Ripple[] = [];
-    for (let index = 0; index < (compact ? 14 : 28); index += 1) {
+    for (let index = 0; index < (compact ? 8 : 28); index += 1) {
       const rippleMaterial = material(new pc.Color(0.2, 0.62, 1), 0, 3.2);
       const ring = new pc.Entity(`TEMPORAL RIPPLE ${index}`);
       ring.addComponent("render", { type: "torus", material: rippleMaterial });
@@ -296,7 +306,7 @@ export function ListeningSeaVisual({
     }
 
     const routes: Route[] = [];
-    for (let index = 0; index < (compact ? 8 : 18); index += 1) {
+    for (let index = 0; index < (compact ? 5 : 18); index += 1) {
       const routeMaterial = material(new pc.Color(0.2, 0.55, 1), 0, 3.6);
       const routeEntity = lineEntity(app, `LIVE PATH ${index}`, [0, 0, 0, 0, 0, 0], routeMaterial, pc.PRIMITIVE_LINESTRIP);
       routeEntity.entity.enabled = false;
@@ -321,7 +331,7 @@ export function ListeningSeaVisual({
     }
 
     const droplets: Droplet[] = [];
-    for (let index = 0; index < (compact ? 10 : 22); index += 1) {
+    for (let index = 0; index < (compact ? 6 : 22); index += 1) {
       const dropMaterial = material(new pc.Color(0.3, 0.76, 1), 0, 5);
       const drop = new pc.Entity(`DATA RAIN ${index}`);
       drop.addComponent("render", { type: "sphere", material: dropMaterial });
@@ -347,13 +357,15 @@ export function ListeningSeaVisual({
     const spawnEvent = (next: SeaEvent) => {
       if (focusRef.current !== "ALL" && focusRef.current !== next.source) return;
       const color = colorFromHex(eventColor(next));
-      const target = positionFor(next, true);
-      const start = positionFor(next, false);
+      const targetMap = positionFor(next, true);
+      const startMap = positionFor(next, false);
+      const target = compact ? portraitPoint(targetMap) : targetMap;
+      const start = compact ? portraitPoint(startMap) : startMap;
       const energy = Math.max(0.25, next.magnitude / 100);
       spawnRipple(target, color, energy);
 
       const drop = droplets.find((candidate) => !candidate.entity.enabled) ?? droplets[hashText(next.id) % droplets.length];
-      drop.start.copy(target).add(new pc.Vec3(0, 3.2 + energy * 4.8, 0));
+      drop.start.copy(target).add(new pc.Vec3(0, compact ? 2.2 + energy * 3.4 : 3.2 + energy * 4.8, 0));
       drop.target.copy(target);
       drop.progress = 0;
       drop.speed = 0.54 + energy * 0.62;
@@ -383,9 +395,11 @@ export function ListeningSeaVisual({
     const resize = () => {
       compact = compactQuery.matches;
       reduced = reducedQuery.matches;
-      app.graphicsDevice.maxPixelRatio = compact ? 1 : Math.min(window.devicePixelRatio || 1, 1.4);
+      app.graphicsDevice.maxPixelRatio = compact ? 0.78 : Math.min(window.devicePixelRatio || 1, 1.4);
+      app.autoRender = !compact;
+      app.renderNextFrame = true;
       app.resizeCanvas(canvas.clientWidth, canvas.clientHeight);
-      if (camera.camera) camera.camera.fov = compact ? 73 : 66;
+      if (camera.camera) camera.camera.fov = compact ? 68 : 66;
       if (cameraFrame) {
         cameraFrame.rendering.renderTargetScale = compact ? 0.66 : 0.88;
         cameraFrame.update();
@@ -401,7 +415,15 @@ export function ListeningSeaVisual({
     reducedQuery.addEventListener("change", resize);
     resize();
 
+    let renderTick = 0;
     app.on("update", (delta: number) => {
+      renderTick += 1;
+      if (compact && renderTick % 2 !== 0) return;
+      if (compact && (!activeRef.current || pausedRef.current)) {
+        if (renderTick <= 4) app.renderNextFrame = true;
+        return;
+      }
+      if (compact) app.renderNextFrame = true;
       if (disposed || pausedRef.current || !activeRef.current) return;
       const dt = Math.min(delta, 0.05) * (reduced ? 0.35 : 1);
       elapsed += dt;
@@ -414,14 +436,14 @@ export function ListeningSeaVisual({
 
       pointer.x += (pointer.tx - pointer.x) * 0.025;
       pointer.y += (pointer.ty - pointer.y) * 0.025;
-      const cameraX = pointer.x * (compact ? 0.25 : 0.52);
-      const cameraY = (compact ? 1.35 : 1.62) - pointer.y * 0.16 + Math.sin(elapsed * 0.11) * 0.035;
-      camera.setPosition(cameraX, cameraY, 7.4);
-      camera.lookAt(pointer.x * 0.55, 0.12, -17.5);
+      const cameraX = compact ? 0 : pointer.x * 0.52;
+      const cameraY = (compact ? 4.8 : 1.62) - (compact ? 0 : pointer.y * 0.16) + Math.sin(elapsed * 0.11) * 0.035;
+      camera.setPosition(cameraX, cameraY, compact ? 5.6 : 7.4);
+      camera.lookAt(compact ? 0 : pointer.x * 0.55, compact ? 0.02 : 0.12, compact ? -9.5 : -17.5);
 
       const risk = riskRef.current;
       if (dangerLight.light) dangerLight.light.intensity = risk * 0.065;
-      if (horizon.light) horizon.light.intensity = (compact ? 5 : 7) + audioRef.current * 3.2;
+      if (horizon.light) horizon.light.intensity = (compact ? 8 : 7) + audioRef.current * 3.2;
       ocean.setLocalEulerAngles(Math.sin(elapsed * 0.07) * 0.18, 0, Math.cos(elapsed * 0.06) * 0.14);
 
       const density = modeRef.current === "drift" ? 0.62 : modeRef.current === "observe" ? 1 : 0.82;
@@ -430,21 +452,22 @@ export function ListeningSeaVisual({
         mote.entity.setPosition(
           mote.origin.x + Math.sin(drift + mote.phase) * 0.32,
           mote.origin.y + Math.cos(drift * 0.7 + mote.phase) * 0.18,
-          mote.origin.z + ((drift * 0.22 + index) % 2.4),
+          mote.origin.z + ((drift * 0.22 + index) % (compact ? 1.4 : 2.4)),
         );
         mote.entity.enabled = index / dust.length < density;
       });
 
-      if (frame % (compact ? 3 : 2) === 0) {
+      if (frame % (compact ? 5 : 2) === 0) {
         currents.forEach((current) => {
           const positions: number[] = [];
-          const laneOffset = (current.lane / Math.max(1, currentCount - 1) - 0.5) * 28;
-          for (let segment = 0; segment <= 34; segment += 1) {
-            const t = segment / 34;
+          const laneOffset = (current.lane / Math.max(1, currentCount - 1) - 0.5) * (compact ? 8.4 : 28);
+          const segments = compact ? 22 : 34;
+          for (let segment = 0; segment <= segments; segment += 1) {
+            const t = segment / segments;
             positions.push(
-              laneOffset + Math.sin(t * 8 + elapsed * 0.18 + current.phase) * (1.2 + current.lane * 0.05),
+              laneOffset + Math.sin(t * 8 + elapsed * 0.18 + current.phase) * (compact ? 0.34 + current.lane * 0.025 : 1.2 + current.lane * 0.05),
               -0.01 + Math.sin(t * 12 + elapsed * 0.3) * 0.025,
-              5 - t * 42,
+              (compact ? 3 : 5) - t * (compact ? 29 : 42),
             );
           }
           current.mesh.setPositions(positions);
@@ -456,7 +479,7 @@ export function ListeningSeaVisual({
         if (ripple.life <= 0) return;
         ripple.life = Math.max(0, ripple.life - dt * (0.22 + ripple.energy * 0.1));
         const age = 1 - ripple.life;
-        const scale = 0.08 + age * (3.5 + ripple.energy * 4.2);
+        const scale = 0.08 + age * (3.5 + ripple.energy * 4.2) * (compact ? 0.65 : 1);
         ripple.entity.setLocalScale(scale, 0.012 + age * 0.025, scale);
         ripple.material.opacity = ripple.life * 0.16;
         ripple.material.update();

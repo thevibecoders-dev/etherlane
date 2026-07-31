@@ -27,7 +27,7 @@ test("builds Etherlane as the Listening Sea instead of the previous dashboard", 
   assert.match(css, /100dvh/);
   assert.match(layout, /og-listening-sea\.png/);
   assert.match(layout, /Hear the living Internet/);
-  assert.match(version, /1\.0\.0/);
+  assert.match(version, /1\.0\.1/);
 });
 
 test("uses live public observatories and labels non-live fallback honestly", async () => {
@@ -61,8 +61,11 @@ test("renders a mobile-aware temporal sea with submerged continents and live pat
   assert.match(scene, /DATA RAIN/);
   assert.match(scene, /routeCurve/);
   assert.match(scene, /prefers-reduced-motion: reduce/);
-  assert.match(scene, /compact \? 42 : 110/);
-  assert.match(scene, /maxPixelRatio = compact \? 1/);
+  assert.match(scene, /compact \? 24 : 110/);
+  assert.match(scene, /maxPixelRatio = compact \? 0\.78/);
+  assert.match(scene, /portraitPoint/);
+  assert.match(scene, /app\.autoRender = !compact/);
+  assert.match(scene, /renderTick % 2/);
   assert.doesNotMatch(scene, /localStorage|sessionStorage|indexedDB|document\.cookie/i);
 });
 
