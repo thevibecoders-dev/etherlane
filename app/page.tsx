@@ -1154,6 +1154,248 @@ export default function Home() {
       context.restore();
     };
 
+    const drawImmersiveHighway = (time: number) => {
+      const risk = infrastructureRiskRef.current;
+      const horizonY = height * (0.475 + Math.sin(time * 0.13) * 0.003);
+      const stormStrength = 0.1 + risk / 115;
+
+      context.clearRect(0, 0, width, height);
+      const sky = context.createLinearGradient(0, 0, 0, height);
+      sky.addColorStop(0, "#02040a");
+      sky.addColorStop(0.5, risk >= 62 ? "#12040a" : "#07071a");
+      sky.addColorStop(1, "#010207");
+      context.fillStyle = sky;
+      context.fillRect(0, 0, width, height);
+
+      context.save();
+      context.globalCompositeOperation = "screen";
+
+      const horizonGlow = context.createRadialGradient(
+        width / 2,
+        horizonY,
+        0,
+        width / 2,
+        horizonY,
+        width * 0.52,
+      );
+      horizonGlow.addColorStop(0, "rgba(113,86,255,.42)");
+      horizonGlow.addColorStop(0.2, "rgba(48,144,255,.12)");
+      horizonGlow.addColorStop(1, "rgba(0,0,0,0)");
+      context.fillStyle = horizonGlow;
+      context.fillRect(0, 0, width, height);
+
+      const starCount = compact ? 34 : 96;
+      for (let index = 0; index < starCount; index += 1) {
+        const x = ((index * 83 + 17) % 997) / 997 * width;
+        const y = ((index * 47 + 31) % 431) / 431 * horizonY * 0.96;
+        const pulse = 0.18 + (Math.sin(time * 0.7 + index * 1.91) + 1) * 0.18;
+        context.fillStyle = index % 4 === 0
+          ? `rgba(151,105,255,${pulse})`
+          : `rgba(87,228,255,${pulse * 0.82})`;
+        context.beginPath();
+        context.arc(x, y, compact ? 0.55 : 0.7 + (index % 3) * 0.22, 0, Math.PI * 2);
+        context.fill();
+      }
+
+      const storm = context.createRadialGradient(
+        width * 0.82,
+        horizonY * 0.83,
+        0,
+        width * 0.82,
+        horizonY * 0.83,
+        width * 0.34,
+      );
+      storm.addColorStop(0, `rgba(255,37,58,${stormStrength * 0.54})`);
+      storm.addColorStop(0.46, `rgba(143,12,37,${stormStrength * 0.32})`);
+      storm.addColorStop(1, "rgba(0,0,0,0)");
+      context.fillStyle = storm;
+      context.fillRect(0, 0, width, horizonY * 1.25);
+
+      const cloudCount = compact ? 5 : 10;
+      for (let cloud = 0; cloud < cloudCount; cloud += 1) {
+        const cloudX = width * (0.68 + ((cloud * 37) % 31) / 100);
+        const cloudY = horizonY * (0.58 + ((cloud * 19) % 24) / 100);
+        const cloudWidth = width * (0.06 + (cloud % 4) * 0.018);
+        context.fillStyle = `rgba(255,48,70,${stormStrength * (0.035 + (cloud % 3) * 0.018)})`;
+        context.beginPath();
+        context.ellipse(
+          cloudX + Math.sin(time * 0.08 + cloud) * 9,
+          cloudY,
+          cloudWidth,
+          cloudWidth * 0.24,
+          -0.12,
+          0,
+          Math.PI * 2,
+        );
+        context.fill();
+      }
+
+      if (risk >= 42 && Math.floor(time * 2.1) % 13 === 0) {
+        const lightningX = width * (0.79 + Math.sin(Math.floor(time)) * 0.06);
+        context.strokeStyle = `rgba(255,225,236,${0.34 + risk / 180})`;
+        context.lineWidth = compact ? 0.8 : 1.4;
+        context.shadowColor = "#ff4c70";
+        context.shadowBlur = compact ? 0 : 18;
+        context.beginPath();
+        context.moveTo(lightningX, horizonY * 0.57);
+        context.lineTo(lightningX - 12, horizonY * 0.71);
+        context.lineTo(lightningX + 3, horizonY * 0.69);
+        context.lineTo(lightningX - 18, horizonY * 0.92);
+        context.stroke();
+        context.shadowBlur = 0;
+      }
+
+      const road = context.createLinearGradient(width / 2, horizonY, width / 2, height);
+      road.addColorStop(0, "rgba(26,28,74,.08)");
+      road.addColorStop(0.42, "rgba(17,20,51,.31)");
+      road.addColorStop(1, "rgba(5,8,24,.82)");
+      context.fillStyle = road;
+      context.beginPath();
+      context.moveTo(width * 0.48, horizonY);
+      context.lineTo(width * 0.52, horizonY);
+      context.lineTo(width * 1.08, height);
+      context.lineTo(width * -0.08, height);
+      context.closePath();
+      context.fill();
+
+      for (let lane = -6; lane <= 6; lane += 1) {
+        const upper = project(lane * 0.18, 0.012);
+        const lower = project(lane * 0.18, 1.06);
+        const laneColor = lane % 3 === 0 ? "87,228,255" : lane % 2 === 0 ? "151,105,255" : "255,190,91";
+        const laneGradient = context.createLinearGradient(upper.x, upper.y, lower.x, lower.y);
+        laneGradient.addColorStop(0, `rgba(${laneColor},0)`);
+        laneGradient.addColorStop(0.34, `rgba(${laneColor},.18)`);
+        laneGradient.addColorStop(1, `rgba(${laneColor},${lane === 0 ? 0.72 : 0.34})`);
+        context.strokeStyle = laneGradient;
+        context.lineWidth = lane === 0 ? 1.7 : 0.72;
+        context.beginPath();
+        context.moveTo(upper.x, upper.y);
+        context.lineTo(lower.x, lower.y);
+        context.stroke();
+      }
+
+      const gridRows = compact ? 13 : 27;
+      for (let row = 0; row < gridRows; row += 1) {
+        const phase = (time * 0.085 + row / gridRows) % 1;
+        const depth = Math.pow(phase, 1.48);
+        const left = project(-1.08, depth);
+        const right = project(1.08, depth);
+        context.strokeStyle = `rgba(96,119,255,${0.025 + depth * 0.19})`;
+        context.lineWidth = 0.5;
+        context.beginPath();
+        context.moveTo(left.x, left.y);
+        context.lineTo(right.x, right.y);
+        context.stroke();
+      }
+
+      const archCount = compact ? 7 : 15;
+      const nodeCount = compact ? 6 : 11;
+      const archFrames = Array.from({ length: archCount }, (_, archIndex) => {
+        const phase = (time * 0.024 + archIndex / archCount) % 1;
+        const depth = 0.04 + Math.pow(phase, 1.42) * 1.02;
+        const center = project(0, depth);
+        const left = project(-1.06, depth);
+        const right = project(1.06, depth);
+        const radiusX = Math.max(5, (right.x - left.x) / 2);
+        const radiusY = 8 + Math.pow(depth, 1.22) * height * 0.78;
+        const points = Array.from({ length: nodeCount }, (_, nodeIndex) => {
+          const angle = Math.PI - nodeIndex / (nodeCount - 1) * Math.PI;
+          return {
+            x: center.x + Math.cos(angle) * radiusX,
+            y: center.y - Math.sin(angle) * radiusY,
+          };
+        });
+        return { depth, center, radiusX, radiusY, points, archIndex };
+      }).sort((first, second) => first.depth - second.depth);
+
+      for (let frameIndex = 0; frameIndex < archFrames.length; frameIndex += 1) {
+        const frame = archFrames[frameIndex];
+        const alpha = 0.07 + frame.depth * 0.42;
+        const hue = frame.archIndex % 3 === 0 ? "87,228,255" : "151,105,255";
+        context.strokeStyle = `rgba(${hue},${alpha})`;
+        context.lineWidth = compact ? 0.55 : 0.65 + frame.depth * 1.05;
+        context.beginPath();
+        context.ellipse(
+          frame.center.x,
+          frame.center.y,
+          frame.radiusX,
+          frame.radiusY,
+          0,
+          Math.PI,
+          Math.PI * 2,
+        );
+        context.stroke();
+
+        const previous = archFrames[frameIndex - 1];
+        frame.points.forEach((node, nodeIndex) => {
+          if (previous) {
+            const previousNode = previous.points[nodeIndex];
+            context.strokeStyle = `rgba(${hue},${alpha * 0.34})`;
+            context.lineWidth = 0.5;
+            context.beginPath();
+            context.moveTo(previousNode.x, previousNode.y);
+            context.lineTo(node.x, node.y);
+            context.stroke();
+          }
+
+          const pulse = 0.72 + Math.sin(time * 1.3 + frame.archIndex * 0.8 + nodeIndex) * 0.28;
+          context.fillStyle = nodeIndex % 4 === 0
+            ? `rgba(255,190,91,${alpha * pulse})`
+            : `rgba(${hue},${alpha * pulse + 0.08})`;
+          context.beginPath();
+          context.arc(node.x, node.y, Math.max(0.65, frame.depth * (compact ? 1.65 : 2.35)), 0, Math.PI * 2);
+          context.fill();
+        });
+      }
+
+      const orderedPackets = [...visualPacketsRef.current].sort((first, second) => first.progress - second.progress);
+      for (const packet of orderedPackets) {
+        if (!pausedRef.current) packet.progress += packet.speed * (0.72 + intensityRef.current * 0.0045);
+        if (packet.progress > 1.08) {
+          packet.progress = -0.025 - (packet.from % 5) * 0.016;
+          packet.lane = ((packet.to % 7) - 3) * 0.27 + (packet.to % 2 ? 0.07 : -0.07);
+        }
+        if (packet.progress < 0) continue;
+        const depth = clamp(packet.progress * (1 - packet.distance * 0.09), 0.004, 1.08);
+        const lane = packet.lane + Math.sin(time * 0.24 + packet.from) * 0.018;
+        const point = project(lane, depth);
+        const previous = project(lane, clamp(depth - 0.085, 0, 1));
+        const color = tones[packet.tone];
+        const alpha = clamp(0.16 + depth * 0.9, 0, 1);
+        const side = Math.max(3, (10 + packet.mass * 28) * point.scale * (compact ? 0.76 : 1));
+
+        context.strokeStyle = `rgba(${color.rgb},${alpha * 0.38})`;
+        context.lineWidth = Math.max(0.6, side * 0.055);
+        context.beginPath();
+        context.moveTo(previous.x, previous.y);
+        context.lineTo(point.x, point.y);
+        context.stroke();
+        drawPacketCube(
+          point.x,
+          point.y,
+          side,
+          packet.tone,
+          alpha,
+          packet.code,
+          depth > 0.38 && (!compact || packet.mass > 1.4),
+        );
+      }
+
+      const vignette = context.createRadialGradient(
+        width / 2,
+        height * 0.5,
+        width * 0.12,
+        width / 2,
+        height * 0.5,
+        width * 0.78,
+      );
+      vignette.addColorStop(0, "rgba(0,0,0,0)");
+      vignette.addColorStop(1, "rgba(0,0,0,.64)");
+      context.fillStyle = vignette;
+      context.fillRect(0, 0, width, height);
+      context.restore();
+    };
+
     const draw = (frameTime = 0) => {
       animationFrame = requestAnimationFrame(draw);
       if (document.hidden) return;
@@ -1167,6 +1409,10 @@ export default function Home() {
       }
       if (visualizationRef.current === "matrix") {
         drawMatrix(time);
+        return;
+      }
+      if (visualizationRef.current === "flow") {
+        drawImmersiveHighway(time);
         return;
       }
       context.clearRect(0, 0, width, height);
