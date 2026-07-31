@@ -186,6 +186,7 @@ test("ships an immersive generative synth without recording or persistence", asy
   assert.match(math, /padChordForHealth/);
   assert.match(math, /rhythmStepFor/);
   assert.match(math, /modulationForSignal/);
+  assert.match(math, /melodicDegreeFor/);
   assert.match(math, /phraseSeed/);
   assert.match(math, /const progression = \[0, 3, 5, 1, 4, 2, 6/);
   assert.match(math, /label:\s*"EDM"/);

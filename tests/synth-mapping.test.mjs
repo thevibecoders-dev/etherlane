@@ -10,6 +10,7 @@ import {
   binauralPair,
   clamp,
   ensembleDetune,
+  melodicDegreeFor,
   midiToFrequency,
   modulationForSignal,
   padChordForHealth,
@@ -211,8 +212,8 @@ test("public data maps to bounded and source-specific modular synthesis targets"
     44,
   );
   for (const modulation of [route, latency, outage]) {
-    assert.ok(modulation.octave >= -2 && modulation.octave <= 2);
-    assert.ok(modulation.pitchCents >= -24 && modulation.pitchCents <= 24);
+    assert.ok(modulation.octave >= -1 && modulation.octave <= 1);
+    assert.ok(modulation.pitchCents >= -4 && modulation.pitchCents <= 4);
     assert.ok(modulation.cutoff >= 240 && modulation.cutoff <= 6400);
     assert.ok(modulation.feedback >= 0.12 && modulation.feedback <= 0.42);
     assert.ok(modulation.delay >= 0.06 && modulation.delay <= 0.46);
@@ -220,9 +221,21 @@ test("public data maps to bounded and source-specific modular synthesis targets"
     assert.ok(modulation.density >= 0.18 && modulation.density <= 0.98);
   }
   assert.notEqual(route.cutoff, latency.cutoff);
-  assert.ok(outage.chordAdvance >= 1 && outage.chordAdvance <= 4);
+  assert.ok(outage.chordAdvance >= 1 && outage.chordAdvance <= 3);
   assert.deepEqual(
     modulationForSignal({ ...base, source: "RIS" }, 44),
     modulationForSignal({ ...base, source: "RIS" }, 44),
   );
+});
+
+test("data melodies evolve inside a compact musical register", () => {
+  for (const mode of ["edm", "techno", "idm"]) {
+    const degrees = Array.from({ length: 256 }, (_, step) =>
+      melodicDegreeFor(mode, step, 91827),
+    );
+    assert.ok(degrees.every((degree) => Number.isInteger(degree)));
+    assert.ok(Math.min(...degrees) >= 0);
+    assert.ok(Math.max(...degrees) <= 9);
+    assert.ok(new Set(degrees).size >= 6, `${mode} should still evolve melodically`);
+  }
 });

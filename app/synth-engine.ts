@@ -20,6 +20,7 @@ import {
   clamp,
   ensembleDetune,
   hashText,
+  melodicDegreeFor,
   midiToFrequency,
   midiToName,
   modulationForSignal,
@@ -1013,7 +1014,7 @@ export class EtherlaneSynth {
       this.settings.scale,
       this.settings.key,
     );
-    const midi = clamp(mappedMidi + this.modulation.octave * 12, 35, 91);
+    const midi = clamp(mappedMidi + this.modulation.octave * 12, 38, 86);
     const freq = midiToFrequency(midi);
     const level = velocity * (0.5 + this.intensity * 0.6);
 
@@ -1259,16 +1260,12 @@ export class EtherlaneSynth {
     const oscillator = this.context.createOscillator();
     const filter = this.context.createBiquadFilter();
     const envelope = this.context.createGain();
-    const rootMidi = clamp(
-      (this.padVoices[0]?.midi ?? 50) - 12 + this.modulation.octave * 12,
-      27,
-      58,
-    );
+    const rootMidi = clamp((this.padVoices[0]?.midi ?? 50) - 12, 29, 53);
     const duration = mode === "edm" ? 0.18 : mode === "techno" ? 0.24 : 0.12;
 
     oscillator.type = mode === "idm" ? "square" : "sawtooth";
     oscillator.frequency.value =
-      midiToFrequency(rootMidi) * 2 ** (this.modulation.pitchCents / 1200);
+      midiToFrequency(rootMidi) * 2 ** (this.modulation.pitchCents / 4800);
     filter.type = "lowpass";
     filter.frequency.setValueAtTime(
       clamp((mode === "techno" ? 180 : 320) + this.modulation.cutoff * 0.13, 190, 980),
@@ -1293,16 +1290,14 @@ export class EtherlaneSynth {
     if (!this.context || !this.accentBus) return;
     const context = this.context;
     const voice = this.modulation.voice;
-    const phrase = Math.floor(step / 32);
-    const degree =
-      ((this.modulation.seed >>> 4) + step * (mode === "idm" ? 3 : 2) + phrase * 5) % 28;
+    const degree = melodicDegreeFor(mode, step, this.modulation.seed);
     const baseMidi = quantizeToScale(
       degree,
       this.settings.scale,
       this.settings.key,
-      5,
+      3,
     );
-    const midi = clamp(baseMidi + this.modulation.octave * 12, 38, 94);
+    const midi = clamp(baseMidi + this.modulation.octave * 12, 42, 82);
     const frequency =
       midiToFrequency(midi) * 2 ** (this.modulation.pitchCents / 1200);
     const duration = 0.08 + clamp(gate, 0, 1) * (mode === "idm" ? 0.34 : 0.56);

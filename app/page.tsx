@@ -624,7 +624,7 @@ export default function Home() {
         ? 0.68 + clamp(event.magnitude / 100, 0, 1) * 0.12
         : 0.82 + clamp(event.magnitude / 100, 0, 1) * 0.22;
     utterance.pitch =
-      event.tone === "coral" ? 0.86 : event.tone === "cyan" ? 1.06 : event.tone === "amber" ? 0.94 : 1;
+      event.tone === "coral" ? 0.97 : event.tone === "cyan" ? 1.02 : event.tone === "amber" ? 0.99 : 1;
     utterance.volume = 0.42 + intensityRef.current * 0.48;
     voiceSpaceRef.current?.playTexture(event.tone, event.magnitude, voiceSpaceAmountRef.current);
     window.speechSynthesis.speak(utterance);

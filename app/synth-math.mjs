@@ -196,19 +196,40 @@ export function modulationForSignal(signal, sequence = 0) {
   }[signal.source];
   const voices = ["SUB", "FOLD", "FM", "GLASS", "AIR", "PULSE"];
   const distress = /OUTAGE|NOTIFICATION|WITHDRAWN|DEGRADED|HIGH LATENCY/.test(signal.kind);
+  // Register changes should feel like musical section changes, not random
+  // transposition. Most signals remain in the current octave.
+  const octave = (seed >>> 3) % 12 === 0 ? sourceBias.register : 0;
   return {
     seed,
-    octave: clamp(sourceBias.register + ((seed >>> 3) % 3) - 1, -2, 2),
-    pitchCents: ((seed >>> 7) % 49) - 24,
+    octave: clamp(octave, -1, 1),
+    pitchCents: ((seed >>> 7) % 9) - 4,
     voice: voices[(seed >>> 11) % voices.length],
     cutoff: clamp(680 + magnitude * 4200 + sourceBias.cutoff, 240, 6400),
     delay: clamp(0.08 + magnitude * 0.28 + sourceBias.delay, 0.06, 0.46),
     reverb: clamp(0.18 + magnitude * 0.48 + sourceBias.reverb, 0.16, 0.92),
     feedback: clamp(0.13 + magnitude * 0.2 + (seed % 9) / 100, 0.12, 0.42),
     density: clamp(0.28 + magnitude * 0.52 + sourceBias.density, 0.18, 0.98),
-    chordAdvance: 1 + ((seed >>> 15) % (distress ? 4 : 3)),
+    chordAdvance: 1 + ((seed >>> 15) % (distress ? 3 : 2)),
     driftRate: clamp(0.025 + ((seed >>> 18) % 70) / 1000, 0.025, 0.095),
   };
+}
+
+/**
+ * A compact scale-degree melody for the modular data voice. Phrases evolve,
+ * but stay within a singable range instead of jumping across several octaves.
+ */
+export function melodicDegreeFor(mode, step, seed = 0) {
+  const motifs = {
+    edm: [0, 2, 4, 2, 5, 4, 2, 1],
+    techno: [0, 0, 3, 1, 0, 4, 2, 1],
+    idm: [0, 4, 1, 5, 2, 3, 1, 6],
+  };
+  const motif = motifs[mode] ?? motifs.edm;
+  const safeStep = Math.max(0, Math.round(step));
+  const phrase = Math.floor(safeStep / 32);
+  const phraseMotion = [0, 0, 1, 0, 2, 1, 3, 1][phrase % 8];
+  const rotation = (seed >>> 5) % motif.length;
+  return motif[(safeStep + rotation) % motif.length] + phraseMotion;
 }
 
 export function midiToFrequency(note) {
