@@ -22,6 +22,7 @@ import {
   neuralVoicePresets,
   type NeuralVoiceName,
 } from "./neural-voice";
+import { ImmersiveFlowScene } from "./immersive-flow";
 import { APP_VERSION } from "./app-version";
 
 type SignalSource =
@@ -1198,6 +1199,10 @@ export default function Home() {
         drawMatrix(time);
         return;
       }
+      if (visualizationRef.current === "flow") {
+        context.clearRect(0, 0, width, height);
+        return;
+      }
       context.clearRect(0, 0, width, height);
       const infrastructureRisk = infrastructureRiskRef.current;
       const horizonY = height * (0.405 + Math.sin(time * 0.17) * 0.006);
@@ -1943,7 +1948,27 @@ export default function Home() {
         infrastructure.risk >= 72 ? "is-disrupted" : ""
       }`}
     >
-      <canvas ref={canvasRef} className="signal-canvas" aria-hidden="true" />
+      <ImmersiveFlowScene
+        active={visualization === "flow"}
+        paused={paused}
+        intensity={intensity}
+        infrastructureRisk={infrastructure.risk}
+        signal={
+          latest
+            ? {
+                id: latest.id,
+                tone: latest.tone,
+                magnitude: latest.magnitude,
+                code: packetCode(latest),
+              }
+            : undefined
+        }
+      />
+      <canvas
+        ref={canvasRef}
+        className={`signal-canvas ${visualization === "flow" ? "is-inactive" : "is-active"}`}
+        aria-hidden="true"
+      />
       <div
         ref={kickLightRef}
         className={`kick-light light-${kickLightColor} ${

@@ -79,6 +79,7 @@ button {
 }
 
 .signal-canvas,
+.immersive-flow,
 .grain,
 .scanline {
   position: absolute;
@@ -89,7 +90,50 @@ button {
 }
 
 .signal-canvas {
+  z-index: -4;
+  transition: opacity 500ms ease;
+}
+
+.signal-canvas.is-inactive {
+  opacity: 0;
+}
+
+.immersive-flow {
   z-index: -3;
+  overflow: hidden;
+  opacity: 0;
+  background: #01020b;
+  transition: opacity 700ms ease;
+}
+
+.immersive-flow.is-active {
+  opacity: 1;
+}
+
+.immersive-flow canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.immersive-horizon,
+.immersive-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.immersive-horizon {
+  background:
+    radial-gradient(circle at 50% 53%, rgba(75, 99, 255, 0.2), transparent 12%),
+    radial-gradient(ellipse at 50% 55%, rgba(56, 15, 255, 0.13), transparent 37%);
+  mix-blend-mode: screen;
+}
+
+.immersive-vignette {
+  background:
+    linear-gradient(180deg, rgba(0, 0, 8, 0.62), transparent 25%, transparent 70%, rgba(0, 0, 6, 0.48)),
+    radial-gradient(ellipse at center, transparent 38%, rgba(0, 0, 9, 0.42) 100%);
 }
 
 .kick-light {
@@ -2138,6 +2182,15 @@ button {
   .signal-canvas {
     position: fixed;
     height: 100dvh;
+  }
+
+  .immersive-flow {
+    position: fixed;
+    height: 100dvh;
+  }
+
+  .immersive-horizon {
+    opacity: 0.78;
   }
 
   .kick-light {

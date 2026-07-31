@@ -201,6 +201,32 @@ test("expands both routing vocabulary and signal-driven visual forms", async () 
   assert.match(css, /\.signal-canvas\s*\{[\s\S]*position:\s*fixed/);
 });
 
+test("builds the flow as a real PlayCanvas world instead of a flat backdrop", async () => {
+  const [page, scene, css, packageJson] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/immersive-flow.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../package.json", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(packageJson, /"playcanvas"/);
+  assert.match(page, /<ImmersiveFlowScene/);
+  assert.match(scene, /new pc\.Application/);
+  assert.match(scene, /LOW FLOW CAMERA/);
+  assert.match(scene, /NETWORK VAULT/);
+  assert.match(scene, /LUMINOUS LANES/);
+  assert.match(scene, /createMatrixCanvas/);
+  assert.match(scene, /emissiveMapOffset/);
+  assert.match(scene, /new pc\.CameraFrame/);
+  assert.match(scene, /bloom\.intensity/);
+  assert.match(scene, /prefers-reduced-motion: reduce/);
+  assert.match(scene, /compact \? 34 : 78/);
+  assert.match(scene, /currentSignal\.magnitude/);
+  assert.match(scene, /riskRef\.current/);
+  assert.match(css, /\.immersive-flow\.is-active/);
+  assert.doesNotMatch(scene, /localStorage|sessionStorage|indexedDB|document\.cookie/i);
+});
+
 test("ships an immersive generative synth without recording or persistence", async () => {
   const [page, engine, math, css] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
