@@ -183,7 +183,8 @@ export class ListeningSeaAudio {
 
     if (event.source === "MEASUREMENT") this.playDroplet(event, map);
     else if (event.source === "INFRASTRUCTURE") this.playSwell(event, map);
-    else if (event.source === "KNOWLEDGE" || event.source === "PUBLICATION") this.playGlass(event, map);
+    else if (event.source === "KNOWLEDGE") this.playGlass(event, map);
+    else if (event.source === "PUBLICATION") this.playWhisper(event, map);
     else this.playFelt(event, map);
   }
 
@@ -254,6 +255,36 @@ export class ListeningSeaAudio {
       oscillator.stop(now + map.duration * 1.4);
     });
     this.routeVoice(voice, { ...map, cutoff: Math.max(3100, map.cutoff), wet: Math.max(0.48, map.wet) });
+  }
+
+  private playWhisper(_event: SeaEvent, map: ReturnType<typeof mapEventToSound>) {
+    if (!this.context || !this.noise) return;
+    const now = this.context.currentTime;
+    const duration = Math.min(3.8, map.duration * 1.18);
+    const source = this.context.createBufferSource();
+    const formantA = this.context.createBiquadFilter();
+    const formantB = this.context.createBiquadFilter();
+    const formantAGain = this.context.createGain();
+    const formantBGain = this.context.createGain();
+    const voice = this.context.createGain();
+    source.buffer = this.noise;
+    source.loop = true;
+    formantA.type = "bandpass";
+    formantB.type = "bandpass";
+    formantA.frequency.value = 680 + (map.midi % 5) * 34;
+    formantB.frequency.value = 1160 + (map.midi % 7) * 47;
+    formantA.Q.value = 5.2;
+    formantB.Q.value = 7.4;
+    formantAGain.gain.value = 0.74;
+    formantBGain.gain.value = 0.32;
+    voice.gain.setValueAtTime(0.0001, now);
+    voice.gain.exponentialRampToValueAtTime(map.velocity * 0.055, now + 0.24);
+    voice.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    source.connect(formantA).connect(formantAGain).connect(voice);
+    source.connect(formantB).connect(formantBGain).connect(voice);
+    this.routeVoice(voice, { ...map, cutoff: Math.max(2200, map.cutoff), wet: Math.max(0.56, map.wet) });
+    source.start(now);
+    source.stop(now + duration + 0.05);
   }
 
   private playSwell(event: SeaEvent, map: ReturnType<typeof mapEventToSound>) {

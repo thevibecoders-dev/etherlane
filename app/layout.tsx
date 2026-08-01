@@ -29,15 +29,15 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol =
     requestHeaders.get("x-forwarded-proto") ??
     (host.startsWith("localhost") ? "http" : "https");
-  const imageUrl = new URL("/og-listening-sea.png", `${protocol}://${host}`).toString();
+  const imageUrl = new URL("/og-signal-oracle.png", `${protocol}://${host}`).toString();
 
   return {
-    title: "Etherlane — Hear the living Internet",
+    title: "Etherlane — The Signal Oracle",
     description:
-      "Enter the Listening Sea: a zero-retention live sonification of public routing, reachability, knowledge and Internet-health observations.",
+      "Hold the living Internet in your hand. Tune public signals into resonance, light and space with zero retention.",
     openGraph: {
-      title: "Etherlane — Hear the living Internet",
-      description: "A live, zero-retention sonification of the public Internet.",
+      title: "Etherlane — The Signal Oracle",
+      description: "A tactile, zero-retention instrument for the public Internet.",
       type: "website",
       locale: "en_US",
       images: [
@@ -45,14 +45,14 @@ export async function generateMetadata(): Promise<Metadata> {
           url: imageUrl,
           width: 1680,
           height: 945,
-          alt: "Etherlane — the Listening Sea, with live public Internet observations becoming light and ripples",
+          alt: "Etherlane — The Signal Oracle, a luminous digital resonator receiving public Internet signals",
         },
       ],
     },
     twitter: {
       card: "summary_large_image",
-      title: "Etherlane — Hear the living Internet",
-      description: "A live, zero-retention sonification of the public Internet.",
+      title: "Etherlane — The Signal Oracle",
+      description: "A tactile, zero-retention instrument for the public Internet.",
       images: [imageUrl],
     },
   };

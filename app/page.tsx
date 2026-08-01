@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { APP_VERSION } from "./app-version";
 import { ListeningSeaAudio } from "./listening-sea-audio";
 import {
@@ -16,7 +16,8 @@ import {
   type SeaSeverity,
   type SeaSource,
 } from "./listening-sea-model";
-import { ListeningSeaVisual } from "./listening-sea-visual-loader";
+import { SignalOracleVisual } from "./signal-oracle-visual";
+import "./oracle.css";
 
 type Health = "connecting" | "live" | "quiet" | "offline";
 type SourceHealth = Record<Exclude<SeaSource, "SYNTHETIC">, Health>;
@@ -82,12 +83,13 @@ const DEFAULT_HEALTH: SourceHealth = {
   INFRASTRUCTURE: "connecting",
 };
 
-const SOURCE_ORDER: Array<Exclude<SeaSource, "SYNTHETIC">> = [
-  "ROUTING",
-  "MEASUREMENT",
-  "KNOWLEDGE",
-  "PUBLICATION",
-  "INFRASTRUCTURE",
+const ORACLE_LAYERS: Array<{ source: SeaSource | "ALL"; name: string; meaning: string; color: string }> = [
+  { source: "ALL", name: "ETHER", meaning: "all signals", color: "#d8e8ff" },
+  { source: "MEASUREMENT", name: "PULSE", meaning: "latency + reach", color: SOURCE_COLORS.MEASUREMENT },
+  { source: "KNOWLEDGE", name: "THOUGHT", meaning: "public knowledge", color: SOURCE_COLORS.KNOWLEDGE },
+  { source: "PUBLICATION", name: "VOICE", meaning: "public feeds", color: SOURCE_COLORS.PUBLICATION },
+  { source: "ROUTING", name: "MACHINE", meaning: "global routing", color: SOURCE_COLORS.ROUTING },
+  { source: "INFRASTRUCTURE", name: "MEMORY", meaning: "network health", color: SOURCE_COLORS.INFRASTRUCTURE },
 ];
 
 const WIKI_REGIONS: Record<string, [number, number]> = {
@@ -134,10 +136,14 @@ export default function EtherlaneListeningSea() {
   const [paused, setPaused] = useState(false);
   const [mode, setMode] = useState<ListeningMode>("drift");
   const [focusSource, setFocusSource] = useState<SeaSource | "ALL">("ALL");
+  const [tunedSource, setTunedSource] = useState<SeaSource | "ALL">("ALL");
   const [events, setEvents] = useState<SeaEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<SeaEvent | null>(null);
   const [showAbout, setShowAbout] = useState(false);
-  const [showLens, setShowLens] = useState(false);
+  const [holding, setHolding] = useState(false);
+  const [tilt, setTilt] = useState({ x: 0, y: 0 });
+  const [motionState, setMotionState] = useState<"unknown" | "ready" | "unavailable">("unknown");
+  const [alignment, setAlignment] = useState<string | null>(null);
   const [sourceHealth, setSourceHealth] = useState<SourceHealth>(DEFAULT_HEALTH);
   const [infrastructure, setInfrastructure] = useState<InfrastructureSnapshot>(EMPTY_INFRASTRUCTURE);
   const [audioLevel, setAudioLevel] = useState(0);
@@ -155,6 +161,10 @@ export default function EtherlaneListeningSea() {
   const audienceSession = useRef("");
   const seenPublications = useRef(new Set<string>());
   const infrastructureSignature = useRef("");
+  const holdingRef = useRef(false);
+  const holdTimerRef = useRef(0);
+  const alignmentSignature = useRef("");
+  const alignmentTimerRef = useRef(0);
 
   const status = useMemo(() => sourceStatus(sourceHealth), [sourceHealth]);
   const latestEvent = events[0];
@@ -166,6 +176,39 @@ export default function EtherlaneListeningSea() {
   }, [mode]);
   useEffect(() => { focusRef.current = focusSource; }, [focusSource]);
   useEffect(() => { pausedRef.current = paused; }, [paused]);
+  useEffect(() => { holdingRef.current = holding; }, [holding]);
+
+  useEffect(() => {
+    if (!entered || motionState !== "ready") return;
+    let lastUpdate = 0;
+    const orient = (orientationEvent: DeviceOrientationEvent) => {
+      const now = performance.now();
+      if (now - lastUpdate < 110) return;
+      lastUpdate = now;
+      const x = clamp((orientationEvent.gamma ?? 0) / 42, -1, 1);
+      const y = clamp((orientationEvent.beta ?? 38) / 75 - 0.5, -1, 1);
+      setTilt({ x, y });
+      if (!holdingRef.current) {
+        const index = Math.round(((x + 1) / 2) * (ORACLE_LAYERS.length - 1));
+        setTunedSource(ORACLE_LAYERS[index].source);
+      }
+    };
+    window.addEventListener("deviceorientation", orient, { passive: true });
+    return () => window.removeEventListener("deviceorientation", orient);
+  }, [entered, motionState]);
+
+  useEffect(() => {
+    const recent = events.filter((candidate) => candidate.live && Date.now() - candidate.timestamp < 4200);
+    const distinct = [...new Set(recent.map((candidate) => candidate.source))].filter((source) => source !== "SYNTHETIC");
+    if (distinct.length < 3) return;
+    const signature = distinct.sort().join(":");
+    if (alignmentSignature.current === signature) return;
+    alignmentSignature.current = signature;
+    const names = distinct.slice(0, 3).map((source) => ORACLE_LAYERS.find((layer) => layer.source === source)?.name ?? source);
+    setAlignment(names.join(" + "));
+    window.clearTimeout(alignmentTimerRef.current);
+    alignmentTimerRef.current = window.setTimeout(() => setAlignment(null), 5600);
+  }, [events]);
 
   const emit = useCallback((event: Omit<SeaEvent, "id" | "timestamp"> & { id?: string; timestamp?: number }) => {
     const normalized: SeaEvent = {
@@ -185,6 +228,19 @@ export default function EtherlaneListeningSea() {
   }, []);
 
   const enter = async () => {
+    const orientation = window.DeviceOrientationEvent as typeof DeviceOrientationEvent & {
+      requestPermission?: () => Promise<"granted" | "denied">;
+    };
+    if (orientation) {
+      try {
+        const permission = orientation.requestPermission ? await orientation.requestPermission() : "granted";
+        setMotionState(permission === "granted" ? "ready" : "unavailable");
+      } catch {
+        setMotionState("unavailable");
+      }
+    } else {
+      setMotionState("unavailable");
+    }
     if (!audioRef.current) audioRef.current = new ListeningSeaAudio();
     await audioRef.current.start();
     audioRef.current.setMode(mode);
@@ -530,7 +586,6 @@ export default function EtherlaneListeningSea() {
       if (event.key === "Escape") {
         setSelectedEvent(null);
         setShowAbout(false);
-        setShowLens(false);
       }
       if (event.code === "Space" && entered && !selectedEvent && !showAbout) {
         event.preventDefault();
@@ -549,62 +604,83 @@ export default function EtherlaneListeningSea() {
     return () => window.clearInterval(timer);
   }, [sessionStartedAt]);
 
-  useEffect(() => () => { void audioRef.current?.stop(); }, []);
+  useEffect(() => () => {
+    window.clearTimeout(holdTimerRef.current);
+    window.clearTimeout(alignmentTimerRef.current);
+    void audioRef.current?.stop();
+  }, []);
 
-  const chooseMode = (next: ListeningMode) => {
-    setMode(next);
-    if (next !== "focus") setFocusSource("ALL");
-    else setShowLens(true);
+  const beginFocus = () => {
+    holdingRef.current = true;
+    setHolding(true);
+    setFocusSource(tunedSource);
+    setMode("focus");
+    window.clearTimeout(holdTimerRef.current);
+    holdTimerRef.current = window.setTimeout(() => {
+      if (latestEvent) setSelectedEvent(latestEvent);
+    }, 1250);
+  };
+
+  const releaseFocus = () => {
+    holdingRef.current = false;
+    setHolding(false);
+    setFocusSource("ALL");
+    setMode("drift");
+    window.clearTimeout(holdTimerRef.current);
   };
 
   const mapping = selectedEvent ? mapEventToSound(selectedEvent) : null;
+  const tunedLayer = ORACLE_LAYERS.find((layer) => layer.source === tunedSource) ?? ORACLE_LAYERS[0];
 
   return (
-    <main className={`sea-shell mode-${mode} ${entered ? "is-entered" : "is-gated"} ${infrastructure.risk >= 72 ? "is-outage" : ""}`}>
-      <ListeningSeaVisual
+    <main
+      className={`oracle-shell ${entered ? "is-entered" : "is-gated"} ${infrastructure.risk >= 72 ? "is-alert" : ""}`}
+      style={{ "--oracle-color": tunedLayer.color } as CSSProperties}
+    >
+      <SignalOracleVisual
         active={entered}
         paused={paused}
-        mode={mode}
+        holding={holding}
+        layer={tunedSource}
         event={latestEvent}
-        focusSource={focusSource}
         infrastructureRisk={infrastructure.risk}
         audioLevel={audioLevel}
+        tilt={tilt}
+        alignment={Boolean(alignment)}
       />
-      <div className="sea-atmosphere" aria-hidden="true" />
+      <div className="oracle-grain" aria-hidden="true" />
 
       {!entered && (
-        <section className="entry-gate" aria-labelledby="entry-title">
-          <div className="entry-mark" aria-hidden="true"><i /><i /><i /></div>
-          <p className="eyebrow">A LIVE SONIFICATION OF THE PUBLIC INTERNET</p>
-          <h1 id="entry-title">ETHERLANE</h1>
-          <p className="entry-title">Hear the living Internet.</p>
-          <p className="entry-copy">
-            Routing changes become felt piano. Latency returns as water. Public knowledge glows.
-            Outages move through the deep.
-          </p>
-          <button className="enter-button" type="button" onClick={() => void enter()}>
-            <span>Enter the Listening Sea</span><i aria-hidden="true" />
-          </button>
-          <div className="entry-notes">
-            <span><i className="headphone-icon" /> Headphones recommended</span>
-            <span><i className="retention-icon" /> Zero retention</span>
-            <span><i className="live-icon" /> Public observatories</span>
+        <section className="oracle-gate" aria-labelledby="entry-title">
+          <div className="oracle-gate-inner">
+            <div className="oracle-sigil" aria-hidden="true" />
+            <p className="oracle-eyebrow">A SIGNAL INSTRUMENT FOR THE PUBLIC INTERNET</p>
+            <h1 id="entry-title">ETHERLANE</h1>
+            <h2>Tune into the living Internet.</h2>
+            <p className="oracle-gate-copy">
+              Hold a living signal in your hand. Tilt to move between pulse, thought, voice,
+              machine and memory. Public observations become resonance, light and space.
+            </p>
+            <button className="oracle-enter" type="button" onClick={() => void enter()}>Open the Signal Oracle</button>
+            <div className="oracle-gate-notes">
+              <span>Headphones recommended</span><span>Move your phone</span><span>Zero retention</span>
+            </div>
+            <p className="oracle-truth">A translation of public measurements — never intercepted private traffic.</p>
           </div>
-          <p className="entry-truth">This is a translation of measurements, not intercepted private traffic.</p>
         </section>
       )}
 
       {entered && (
         <>
-          <header className="sea-header">
-            <button className="wordmark" type="button" onClick={() => setShowAbout(true)} aria-label="About Etherlane">
-              <span>ETHERLANE</span><small>THE LISTENING SEA</small>
+          <header className="oracle-header">
+            <button className="oracle-brand" type="button" onClick={() => setShowAbout(true)} aria-label="About Etherlane">
+              <strong>ETHERLANE</strong><small>THE SIGNAL ORACLE</small>
             </button>
-            <div className="live-state" aria-live="polite">
+            <div className="oracle-live" aria-live="polite">
               <i className={status.live > 0 ? "is-live" : ""} />
               <span>{status.live > 0 ? `${status.live}/${status.total} OBSERVATORIES LIVE` : "RECONNECTING"}</span>
             </div>
-            <div className="header-actions">
+            <div className="oracle-actions">
               <button type="button" onClick={() => void toggleSound()} aria-pressed={soundEnabled} aria-label={soundEnabled ? "Mute sound" : "Enable sound"}>
                 <span className={`sound-glyph ${soundEnabled ? "is-on" : ""}`}><i /><i /><i /></span>
               </button>
@@ -615,17 +691,10 @@ export default function EtherlaneListeningSea() {
             </div>
           </header>
 
-          <nav className="mode-switcher" aria-label="Listening mode">
-            {(["drift", "observe", "focus"] as ListeningMode[]).map((option) => (
-              <button key={option} type="button" className={mode === option ? "is-active" : ""} onClick={() => chooseMode(option)} aria-pressed={mode === option}>
-                <span>{option}</span>
-                <small>{option === "drift" ? "meditative" : option === "observe" ? "unfiltered" : "one signal"}</small>
-              </button>
-            ))}
-          </nav>
+          <section className="oracle-stage">
 
-          <section className="now-listening" aria-live="polite">
-            <p><span className="signal-dot" style={{ background: latestEvent ? eventColor(latestEvent) : "#6ee7ff" }} />NOW LISTENING</p>
+          <div className="oracle-signal" aria-live="polite">
+            <p className="oracle-signal-label">RECEIVING NOW</p>
             {latestEvent ? (
               <button type="button" onClick={() => setSelectedEvent(latestEvent)}>
                 <strong>{latestEvent.kind}</strong>
@@ -633,37 +702,54 @@ export default function EtherlaneListeningSea() {
                 <small>{latestEvent.live ? SOURCE_LABELS[latestEvent.source] : "LABELLED FALLBACK"} · {formatClock(latestEvent.timestamp)}</small>
               </button>
             ) : (
-              <div className="waiting-signal"><strong>OPENING THE ETHER</strong><span>Waiting for the first public observation</span></div>
+              <div className="oracle-waiting">Opening the public observatories</div>
             )}
-          </section>
+          </div>
 
-          <section className={`listening-lens ${showLens || mode === "focus" ? "is-open" : ""}`}>
-            <button className="lens-toggle" type="button" onClick={() => setShowLens((current) => !current)} aria-expanded={showLens || mode === "focus"}>
-              <i /> <span>LISTENING LENS</span><strong>{focusSource === "ALL" ? "GLOBAL" : focusSource}</strong>
-            </button>
-            <div className="lens-options">
-              <button type="button" className={focusSource === "ALL" ? "is-active" : ""} onClick={() => setFocusSource("ALL")}>ALL</button>
-              {SOURCE_ORDER.map((source) => (
-                <button key={source} type="button" className={focusSource === source ? "is-active" : ""} onClick={() => { setFocusSource(source); setMode("focus"); }}>
-                  <i style={{ background: SOURCE_COLORS[source] }} />{source}
+          {alignment && (
+            <div className="oracle-alignment" aria-live="polite">
+              <strong>SIGNAL ALIGNMENT</strong><span>{alignment} briefly share one resonance</span>
+            </div>
+          )}
+
+          <button
+            className={`oracle-resonator ${holding ? "is-holding" : ""}`}
+            type="button"
+            onPointerDown={beginFocus}
+            onPointerUp={releaseFocus}
+            onPointerCancel={releaseFocus}
+            onPointerLeave={() => { if (holdingRef.current) releaseFocus(); }}
+            onKeyDown={(keyEvent) => { if (keyEvent.key === "Enter" && latestEvent) setSelectedEvent(latestEvent); }}
+            aria-label={`Hold to isolate ${tunedLayer.name}. Long press for the scientific translation.`}
+            aria-pressed={holding}
+          >
+            <span>{holding ? `ISOLATING ${tunedLayer.name}` : "HOLD TO LISTEN"}</span>
+          </button>
+
+          <div className="oracle-tuner">
+            <p className="oracle-tuner-status"><span>TUNED TO</span><strong>{tunedLayer.name}</strong><span>{tunedLayer.meaning}</span></p>
+            <nav className="oracle-layers" aria-label="Signal layer">
+              {ORACLE_LAYERS.map((layer) => (
+                <button
+                  key={layer.source}
+                  type="button"
+                  className={tunedSource === layer.source ? "is-active" : ""}
+                  onClick={() => setTunedSource(layer.source)}
+                  aria-pressed={tunedSource === layer.source}
+                >
+                  <i style={{ color: layer.color }} />{layer.name}
                 </button>
               ))}
-            </div>
+            </nav>
+            <p className="oracle-hint">{motionState === "ready" ? "TILT TO TUNE · HOLD TO ISOLATE · LONG HOLD TO UNDERSTAND" : "CHOOSE A LAYER · HOLD TO ISOLATE · LONG HOLD TO UNDERSTAND"}</p>
+          </div>
           </section>
 
-          <aside className="source-rail" aria-label="Live sources">
-            {SOURCE_ORDER.map((source) => (
-              <div key={source} className={`source-health state-${sourceHealth[source]}`}>
-                <i style={{ color: SOURCE_COLORS[source] }} /><span>{SOURCE_LABELS[source]}</span><small>{sourceHealth[source]}</small>
-              </div>
-            ))}
-          </aside>
-
-          <footer className="sea-footer">
+          <footer className="oracle-footer">
             <span>LIVE EVENTS <strong>{events.filter((event) => event.live).length}</strong></span>
             <span>LISTENERS <strong>{audience.listeners}</strong></span>
             <span>SESSION <strong>{sessionMinutes}m</strong></span>
-            <span className="zero-retention">ZERO RETENTION · RAW EVENTS EXIST IN MEMORY ONLY</span>
+            <span className="retention">ZERO RETENTION · MEMORY ONLY</span>
             <span>V{audience.version}</span>
           </footer>
         </>
@@ -697,16 +783,16 @@ export default function EtherlaneListeningSea() {
           <button className="overlay-dismiss" type="button" onClick={() => setShowAbout(false)} aria-label="Close information" />
           <article className="about-panel">
             <button className="close-inspector" type="button" onClick={() => setShowAbout(false)} aria-label="Close">×</button>
-            <p className="eyebrow">AN INTERNET OBSERVATORY</p>
-            <h2 id="about-title">What are you hearing?</h2>
+            <p className="eyebrow">THE SIGNAL ORACLE</p>
+            <h2 id="about-title">How does it listen?</h2>
             <p>
-              Etherlane translates public routing, reachability, knowledge, publication and infrastructure-health observations into a shared audiovisual environment. It does not intercept private traffic.
+              Etherlane turns this device into an instrument for public Internet observations. Tilt selects a layer; holding the resonator isolates it. No private traffic is intercepted.
             </p>
             <div className="about-sections">
-              <section><span>THE FOUNDATION</span><p>A fixed low D drone remains stable. Data changes texture, space and event voices without uncontrolled pitch or octave jumps.</p></section>
-              <section><span>THE SOURCES</span><p>RIPE RIS, RIPE Atlas, Wikimedia EventStreams, public syndication feeds, DNS root checks, IODA and public status monitors.</p></section>
-              <section><span>ZERO RETENTION</span><p>Raw events are normalized in memory, rendered and discarded. No packet payloads, browsing history, IP profiles, cookies or event database.</p></section>
-              <section><span>THE LIMIT</span><p>This is data sonification: a consistent translation of observations, not the literal sound of electricity moving through cables.</p></section>
+              <section><span>THE RESONATOR</span><p>A fixed low D field remains stable. Magnitude shapes movement, confidence opens the filter, latency becomes reflection and distance becomes space.</p></section>
+              <section><span>THE LAYERS</span><p>Pulse is reachability, Thought is public knowledge, Voice is syndication, Machine is routing and Memory is infrastructure health.</p></section>
+              <section><span>ALIGNMENTS</span><p>When several independent public sources change together, the membrane briefly combines their light and resonance into a rare alignment.</p></section>
+              <section><span>ZERO RETENTION</span><p>Raw events exist only in memory long enough to be translated. No packet payloads, browsing history, profiles, cookies or event database.</p></section>
             </div>
             <div className="about-status">
               <span>ROOT SYSTEM <strong>{infrastructure.root.state}</strong></span>
