@@ -38,7 +38,8 @@
 .oracle-actions { justify-self:end; display:flex; gap:4px; }
 .oracle-actions button { width:36px; height:36px; border:0; border-radius:50%; background:rgba(5,12,28,.3); cursor:pointer; }
 
-.oracle-stage { position:absolute; z-index:3; inset:72px 0 47px; display:grid; grid-template-rows:auto 1fr auto; pointer-events:none; }
+.oracle-workspace { position:absolute; z-index:3; inset:76px 18px 48px; display:grid; grid-template-columns:minmax(220px,270px) minmax(420px,1fr) minmax(240px,292px); gap:18px; }
+.oracle-stage { position:relative; min-width:0; min-height:0; display:grid; grid-template-rows:auto 1fr auto; pointer-events:none; }
 .oracle-signal { align-self:start; justify-self:center; width:min(430px,calc(100% - 34px)); text-align:center; }
 .oracle-signal-label { margin:0 0 9px; color:rgba(201,220,251,.4); font:500 7px/1 var(--font-geist-mono); letter-spacing:.22em; }
 .oracle-signal button,.oracle-waiting { width:100%; padding:10px 18px; border:1px solid rgba(134,178,239,.11); border-radius:14px; background:rgba(2,7,18,.34); backdrop-filter:blur(15px); cursor:pointer; }
@@ -46,10 +47,10 @@
 .oracle-signal span { display:block; margin-top:5px; color:rgba(226,236,255,.62); font-size:10px; }
 .oracle-signal small { display:block; margin-top:5px; color:rgba(190,208,238,.3); font:500 6px/1 var(--font-geist-mono); letter-spacing:.11em; }
 
-.oracle-resonator { position:absolute; z-index:4; top:50%; left:50%; width:min(48vh,66vw); aspect-ratio:1; transform:translate(-50%,-50%); border:0; border-radius:50%; background:transparent; cursor:grab; pointer-events:auto; touch-action:none; -webkit-tap-highlight-color:transparent; }
-.oracle-resonator:active,.oracle-resonator.is-holding { cursor:grabbing; }
-.oracle-resonator span { position:absolute; left:50%; bottom:9%; transform:translateX(-50%); width:max-content; color:rgba(217,233,255,.34); font:500 7px/1 var(--font-geist-mono); letter-spacing:.18em; text-transform:uppercase; transition:.3s ease; }
-.oracle-resonator.is-holding span { color:rgba(239,249,255,.78); letter-spacing:.24em; }
+.oracle-resonator { position:absolute; z-index:4; top:50%; left:50%; width:min(49vh,88%); aspect-ratio:1; transform:translate(-50%,-50%); border:0; border-radius:50%; background:transparent; cursor:pointer; pointer-events:auto; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+.oracle-resonator:active { transform:translate(-50%,-50%) scale(.985); }
+.oracle-resonator span { position:absolute; left:50%; bottom:5%; transform:translateX(-50%); width:max-content; padding:10px 15px; border:1px solid color-mix(in srgb,var(--oracle-color) 30%,transparent); border-radius:999px; background:rgba(2,8,20,.58); backdrop-filter:blur(15px); color:rgba(224,238,255,.72); box-shadow:0 10px 35px rgba(0,0,0,.28); font:600 7px/1 var(--font-geist-mono); letter-spacing:.16em; text-transform:uppercase; transition:.3s ease; }
+.oracle-resonator.is-holding span { color:#fff; border-color:color-mix(in srgb,var(--oracle-color) 68%,transparent); background:color-mix(in srgb,var(--oracle-color) 16%,rgba(2,8,20,.75)); box-shadow:0 0 32px color-mix(in srgb,var(--oracle-color) 22%,transparent); }
 
 .oracle-alignment { position:absolute; z-index:6; top:19%; left:50%; transform:translateX(-50%); width:min(390px,calc(100% - 36px)); padding:11px 18px; border:1px solid rgba(190,181,255,.23); border-radius:999px; background:rgba(28,20,69,.28); backdrop-filter:blur(15px); text-align:center; animation:alignment-arrive .7s ease both; }
 .oracle-alignment strong { display:block; font:600 8px/1 var(--font-geist-mono); letter-spacing:.2em; }
@@ -64,6 +65,32 @@
 .oracle-layers button.is-active { color:#eff8ff; border-color:color-mix(in srgb,var(--oracle-color) 45%,transparent); background:color-mix(in srgb,var(--oracle-color) 10%,rgba(2,8,20,.7)); box-shadow:inset 0 -1px var(--oracle-color),0 10px 30px rgba(0,0,0,.22); }
 .oracle-hint { margin:11px 0 0; text-align:center; color:rgba(193,211,240,.28); font:500 6px/1.4 var(--font-geist-mono); letter-spacing:.13em; text-transform:uppercase; }
 
+.oracle-feed,.oracle-science { align-self:stretch; min-height:0; padding:16px; border:1px solid rgba(133,171,229,.09); border-radius:18px; background:linear-gradient(180deg,rgba(5,13,30,.5),rgba(2,7,18,.26)); backdrop-filter:blur(17px); box-shadow:0 22px 70px rgba(0,0,0,.18); }
+.oracle-panel-heading { display:flex; align-items:center; justify-content:space-between; padding-bottom:13px; border-bottom:1px solid rgba(136,173,226,.08); color:rgba(197,216,246,.42); font:600 7px/1 var(--font-geist-mono); letter-spacing:.17em; }
+.oracle-panel-heading strong { color:var(--oracle-color); font-weight:600; }
+.oracle-feed { display:flex; flex-direction:column; }
+.oracle-feed-list { display:flex; flex:1; min-height:0; flex-direction:column; gap:5px; padding-top:10px; overflow:hidden; }
+.oracle-feed-list button { display:grid; grid-template-columns:5px 1fr auto; align-items:center; gap:10px; width:100%; padding:11px 8px; border:0; border-bottom:1px solid rgba(139,173,224,.06); background:transparent; cursor:pointer; text-align:left; transition:.2s ease; }
+.oracle-feed-list button:hover { background:rgba(93,139,209,.06); transform:translateX(2px); }
+.oracle-feed-list button > i { width:4px; height:4px; border-radius:50%; box-shadow:0 0 9px currentColor; }
+.oracle-feed-list button span { min-width:0; }
+.oracle-feed-list button strong { display:block; overflow:hidden; color:rgba(230,240,255,.75); font:600 7px/1.2 var(--font-geist-mono); letter-spacing:.09em; text-overflow:ellipsis; white-space:nowrap; }
+.oracle-feed-list button small { display:block; overflow:hidden; margin-top:5px; color:rgba(195,214,245,.38); font-size:8px; text-overflow:ellipsis; white-space:nowrap; }
+.oracle-feed-list time { color:rgba(190,209,238,.24); font:500 6px/1 var(--font-geist-mono); }
+.oracle-feed-list > p,.oracle-panel-note { color:rgba(193,211,241,.35); font-size:9px; line-height:1.55; }
+.oracle-panel-note { margin:12px 0 0; padding-top:12px; border-top:1px solid rgba(136,173,226,.07); }
+
+.oracle-science { overflow:auto; scrollbar-width:none; }.oracle-science::-webkit-scrollbar{display:none}
+.oracle-layer-description { margin:14px 0 16px; color:rgba(207,222,248,.48); font-size:10px; line-height:1.55; }
+.oracle-science-event { display:flex; align-items:center; gap:8px; margin-bottom:10px; color:rgba(234,243,255,.74); font:600 7px/1 var(--font-geist-mono); letter-spacing:.1em; }
+.oracle-science-event i { width:5px; height:5px; border-radius:50%; }
+.oracle-mapping-list { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:0; }
+.oracle-mapping-list div { min-width:0; padding:10px; border:1px solid rgba(132,171,230,.08); border-radius:11px; background:rgba(3,9,22,.38); }
+.oracle-mapping-list dt { color:rgba(185,205,236,.35); font:500 6px/1 var(--font-geist-mono); letter-spacing:.12em; text-transform:uppercase; }
+.oracle-mapping-list dd { margin:7px 0 0; color:rgba(236,245,255,.78); font-size:13px; }.oracle-mapping-list small { display:block; margin-top:4px; color:rgba(185,203,233,.28); font-size:6px; }
+.oracle-explain { width:100%; margin-top:10px; padding:10px; border:1px solid rgba(130,191,255,.18); border-radius:11px; background:rgba(29,74,126,.13); cursor:pointer; color:rgba(222,237,255,.63); font:600 7px/1 var(--font-geist-mono); letter-spacing:.12em; text-transform:uppercase; }
+.oracle-core-health { display:grid; grid-template-columns:1fr auto; gap:5px 10px; margin-top:13px; padding-top:12px; border-top:1px solid rgba(136,173,226,.07); color:rgba(189,210,241,.34); font:500 6px/1 var(--font-geist-mono); letter-spacing:.12em; }.oracle-core-health strong{color:rgba(234,242,255,.64)}.oracle-core-health small{grid-column:1/-1;color:rgba(185,204,234,.25)}
+
 .oracle-footer { position:absolute; z-index:5; left:0; right:0; bottom:0; display:flex; gap:18px; align-items:center; min-height:43px; padding:8px 18px max(8px,env(safe-area-inset-bottom)); border-top:1px solid rgba(146,182,234,.07); color:rgba(186,207,238,.33); font:500 6px/1 var(--font-geist-mono); letter-spacing:.1em; }
 .oracle-footer strong { color:rgba(226,237,255,.6); }.oracle-footer .retention { margin-left:auto; }.oracle-footer span:last-child { margin-left:auto; }
 
@@ -74,11 +101,17 @@
   .oracle-header { min-height:60px; padding:max(12px,env(safe-area-inset-top)) 11px 7px; grid-template-columns:1fr auto; }
   .oracle-brand small,.oracle-live span,.oracle-actions button:last-child { display:none; }
   .oracle-live { position:absolute; right:88px; }.oracle-actions button { width:33px;height:33px; }
-  .oracle-stage { inset:61px 0 42px; }.oracle-signal { width:calc(100% - 20px); }.oracle-signal button,.oracle-waiting { padding:9px 12px; }
-  .oracle-resonator { width:min(44vh,76vw); }.oracle-resonator span { bottom:2%; }
+  .oracle-workspace { inset:61px 0 42px; display:block; }.oracle-feed,.oracle-science { display:none; }
+  .oracle-stage { width:100%; height:100%; }.oracle-signal { width:calc(100% - 20px); }.oracle-signal button,.oracle-waiting { padding:9px 12px; }
+  .oracle-resonator { width:min(43vh,74vw); }.oracle-resonator span { bottom:-1%; padding:9px 13px; }
   .oracle-tuner { width:calc(100% - 18px); }.oracle-layers { gap:3px; }.oracle-layers button { min-height:42px;padding:7px 1px;font-size:6px;letter-spacing:.04em;border-radius:10px; }
   .oracle-tuner-status { margin-bottom:8px; }.oracle-hint { margin-top:8px; }.oracle-footer { gap:11px;padding-inline:10px; }.oracle-footer .retention { display:none; }
   .oracle-gate { padding-inline:18px; }.oracle-sigil { width:72px;margin-bottom:31px; }.oracle-gate h1 { font-size:clamp(43px,13vw,62px);letter-spacing:.15em;text-indent:.15em; }.oracle-gate h2 { font-size:19px; }.oracle-gate-copy { font-size:11px;line-height:1.65; }
+}
+
+@media (min-width:761px) and (max-width:1080px) {
+  .oracle-workspace { grid-template-columns:minmax(190px,230px) minmax(360px,1fr); }
+  .oracle-science { display:none; }
 }
 
 @media (max-height:680px) and (max-width:760px) {

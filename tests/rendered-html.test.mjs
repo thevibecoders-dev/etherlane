@@ -15,21 +15,26 @@ test("builds Etherlane as the tactile Signal Oracle", async () => {
   assert.match(page, /Open the Signal Oracle/);
   assert.match(page, /never intercepted private traffic/);
   assert.match(page, /<SignalOracleVisual/);
-  assert.match(page, /TILT TO TUNE/);
-  assert.match(page, /HOLD TO LISTEN/);
+  assert.match(page, /LISTEN TO/);
+  assert.match(page, /oracle-feed/);
+  assert.match(page, /oracle-science/);
   assert.match(page, /SIGNAL ALIGNMENT/);
   assert.match(page, /eventExplanation/);
   assert.match(page, /ZERO RETENTION · MEMORY ONLY/);
   assert.match(css, /\.oracle-canvas/);
   assert.match(css, /\.oracle-resonator/);
   assert.match(css, /\.oracle-layers/);
+  assert.match(css, /\.oracle-workspace/);
+  assert.match(css, /\.oracle-feed/);
+  assert.match(css, /\.oracle-science/);
+  assert.match(css, /grid-template-columns:minmax\(220px,270px\)/);
   assert.match(globalCss, /\.event-inspector/);
   assert.match(css, /@media \(max-width:760px\)/);
   assert.match(css, /env\(safe-area-inset-bottom\)/);
   assert.match(css, /100dvh/);
   assert.match(layout, /og-signal-oracle\.png/);
   assert.match(layout, /The Signal Oracle/);
-  assert.match(version, /2\.0\.0/);
+  assert.match(version, /2\.1\.0/);
 });
 
 test("uses live public observatories and labels non-live fallback honestly", async () => {
@@ -64,8 +69,10 @@ test("renders the Signal Oracle without a 3D engine", async () => {
   assert.match(oracle, /state\.alignment/);
   assert.match(oracle, /state\.infrastructureRisk/);
   assert.match(page, /deviceorientation/);
-  assert.match(page, /requestPermission/);
+  assert.match(page, /toggleListening/);
+  assert.match(page, /onPointerMove=\{moveOracle\}/);
   assert.match(page, /ORACLE_LAYERS/);
+  assert.doesNotMatch(page, /LONG HOLD|requestPermission/);
   assert.doesNotMatch(oracle + page, /from "playcanvas"|new pc\./);
   assert.doesNotMatch(oracle, /localStorage|sessionStorage|indexedDB|document\.cookie/i);
 });
